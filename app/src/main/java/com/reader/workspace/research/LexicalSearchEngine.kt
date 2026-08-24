@@ -1,9 +1,19 @@
 package com.reader.workspace.research
 
+import java.text.Normalizer
+
 enum class LexicalMatchMode {
     EXACT,
     PREFIX,
+    SUFFIX,
     CONTAINS,
+}
+
+enum class ProximityScope {
+    CHARACTERS,
+    SENTENCE,
+    PARAGRAPH,
+    PAGE,
 }
 
 data class LexicalAxis(
@@ -12,6 +22,7 @@ data class LexicalAxis(
     val patterns: List<String>,
     val matchMode: LexicalMatchMode = LexicalMatchMode.PREFIX,
     val caseSensitive: Boolean = false,
+    val diacriticsSensitive: Boolean = true,
     val enabled: Boolean = true,
 )
 
@@ -27,7 +38,8 @@ data class LexicalHit(
 data class ProximityRule(
     val id: String,
     val requiredAxisIds: Set<String>,
-    val maxSpanChars: Int,
+    val maxSpanChars: Int = 300,
+    val scope: ProximityScope = ProximityScope.CHARACTERS,
 )
 
 data class ProximityMatch(
@@ -59,6 +71,7 @@ object LexicalSearchEngine {
     fun findProximityMatches(
         hits: List<LexicalHit>,
         rules: List<ProximityRule>,
+        text: String? = null,
     ): List<ProximityMatch> {
         if (hits.isEmpty()) return emptyList()
         val orderedHits = hits.sortedBy(LexicalHit::startOffset)
@@ -67,7 +80,27 @@ object LexicalSearchEngine {
             if (rule.requiredAxisIds.isEmpty() || rule.maxSpanChars < 0) {
                 emptyList()
             } else {
-                minimalWindowsForRule(orderedHits, rule)
+                when (rule.scope) {
+                    ProximityScope.CHARACTERS -> minimalWindowsForRule(orderedHits, rule)
+                    ProximityScope.SENTENCE -> scopedMatches(
+                        hits = orderedHits,
+                        rule = rule,
+                        ranges = text?.let(::sentenceRanges).orEmpty(),
+                    )
+                    ProximityScope.PARAGRAPH -> scopedMatches(
+                        hits = orderedHits,
+                        rule = rule,
+                        ranges = text?.let(::paragraphRanges).orEmpty(),
+                    )
+                    ProximityScope.PAGE -> {
+                        val pageText = text ?: return@flatMap emptyList()
+                        scopedMatches(
+                            hits = orderedHits,
+                            rule = rule,
+                            ranges = listOf(0 until pageText.length),
+                        )
+                    }
+                }
             }
         }.sortedBy(ProximityMatch::startOffset)
     }
@@ -78,22 +111,24 @@ object LexicalSearchEngine {
         pattern: String,
     ): List<LexicalHit> {
         val result = mutableListOf<LexicalHit>()
-        val lastStart = text.length - pattern.length
+        val comparisonText = foldForComparison(text, axis)
+        val comparisonPattern = foldForComparison(pattern, axis)
+        val lastStart = comparisonText.length - comparisonPattern.length
         if (lastStart < 0) return result
 
         for (start in 0..lastStart) {
-            if (!text.regionMatches(
+            if (!comparisonText.regionMatches(
                     thisOffset = start,
-                    other = pattern,
+                    other = comparisonPattern,
                     otherOffset = 0,
-                    length = pattern.length,
-                    ignoreCase = !axis.caseSensitive,
+                    length = comparisonPattern.length,
+                    ignoreCase = false,
                 )
             ) {
                 continue
             }
 
-            val end = start + pattern.length
+            val end = start + comparisonPattern.length
             if (!matchesMode(text, pattern, start, end, axis.matchMode)) continue
 
             result += LexicalHit(
@@ -108,6 +143,31 @@ object LexicalSearchEngine {
         return result
     }
 
+    private fun foldForComparison(text: String, axis: LexicalAxis): String = buildString(text.length) {
+        text.forEach { source ->
+            var folded = source
+            if (!axis.diacriticsSensitive) {
+                folded = stripDiacritic(source)
+            }
+            if (!axis.caseSensitive) {
+                folded = folded.lowercaseChar()
+            }
+            append(folded)
+        }
+    }
+
+    private fun stripDiacritic(source: Char): Char {
+        val decomposed = Normalizer.normalize(source.toString(), Normalizer.Form.NFD)
+        return decomposed.firstOrNull { char ->
+            when (Character.getType(char)) {
+                Character.NON_SPACING_MARK.toInt(),
+                Character.COMBINING_SPACING_MARK.toInt(),
+                Character.ENCLOSING_MARK.toInt(), -> false
+                else -> true
+            }
+        } ?: source
+    }
+
     private fun matchesMode(
         text: String,
         pattern: String,
@@ -119,6 +179,10 @@ object LexicalSearchEngine {
         LexicalMatchMode.PREFIX -> {
             val needsLeftBoundary = pattern.firstOrNull()?.isLetterOrDigit() == true
             !needsLeftBoundary || isBoundaryBefore(text, start)
+        }
+        LexicalMatchMode.SUFFIX -> {
+            val needsRightBoundary = pattern.lastOrNull()?.isLetterOrDigit() == true
+            !needsRightBoundary || isBoundaryAfter(text, end)
         }
         LexicalMatchMode.EXACT -> {
             val needsLeftBoundary = pattern.firstOrNull()?.isLetterOrDigit() == true
@@ -133,6 +197,59 @@ object LexicalSearchEngine {
 
     private fun isBoundaryAfter(text: String, offset: Int): Boolean =
         offset == text.length || !text[offset].isLetterOrDigit()
+
+    private fun scopedMatches(
+        hits: List<LexicalHit>,
+        rule: ProximityRule,
+        ranges: List<IntRange>,
+    ): List<ProximityMatch> = ranges.mapNotNull { range ->
+        if (range.isEmpty()) return@mapNotNull null
+        val segmentHits = hits.filter { hit ->
+            hit.startOffset >= range.first && hit.endOffsetExclusive <= range.last + 1
+        }
+        if (!segmentHits.map(LexicalHit::axisId).toSet().containsAll(rule.requiredAxisIds)) {
+            return@mapNotNull null
+        }
+
+        minimalWindowsForRule(
+            hits = segmentHits,
+            rule = rule.copy(maxSpanChars = Int.MAX_VALUE),
+        ).minWithOrNull(
+            compareBy<ProximityMatch> { it.endOffsetExclusive - it.startOffset }
+                .thenBy(ProximityMatch::startOffset),
+        )
+    }
+
+    private fun sentenceRanges(text: String): List<IntRange> {
+        if (text.isEmpty()) return emptyList()
+        val result = mutableListOf<IntRange>()
+        var start = 0
+
+        text.forEachIndexed { index, char ->
+            if (char == '.' || char == '!' || char == '?' || char == '…') {
+                result += start..index
+                start = index + 1
+            }
+        }
+        if (start < text.length) result += start until text.length
+        return result.filterNot(IntRange::isEmpty)
+    }
+
+    private fun paragraphRanges(text: String): List<IntRange> {
+        if (text.isEmpty()) return emptyList()
+        val separators = Regex("\\n[\\t \\r]*\\n+")
+        val result = mutableListOf<IntRange>()
+        var start = 0
+
+        separators.findAll(text).forEach { match ->
+            if (start < match.range.first) {
+                result += start until match.range.first
+            }
+            start = match.range.last + 1
+        }
+        if (start < text.length) result += start until text.length
+        return if (result.isEmpty()) listOf(0 until text.length) else result
+    }
 
     private fun minimalWindowsForRule(
         hits: List<LexicalHit>,
