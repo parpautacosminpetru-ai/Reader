@@ -124,9 +124,9 @@ data class ResearchProfile(
     val title: String,
     val axisIds: List<String>,
     val proximityChars: Int,
-    val proximityScope: ProximityScope = ProximityScope.CHARACTERS,
     val createdAtEpochMillis: Long,
     val updatedAtEpochMillis: Long,
+    val proximityScope: ProximityScope = ProximityScope.CHARACTERS,
 )
 
 enum class ResearchHistoryScope {
@@ -297,10 +297,10 @@ fun ResearchProfileEntity.toModel(): ResearchProfile = ResearchProfile(
     title = title,
     axisIds = ResearchCodec.decode(axisIdsEncoded),
     proximityChars = proximityChars.coerceAtLeast(0),
-    proximityScope = runCatching { ProximityScope.valueOf(proximityScope) }
-        .getOrDefault(ProximityScope.CHARACTERS),
     createdAtEpochMillis = createdAtEpochMillis,
     updatedAtEpochMillis = updatedAtEpochMillis,
+    proximityScope = runCatching { ProximityScope.valueOf(proximityScope) }
+        .getOrDefault(ProximityScope.CHARACTERS),
 )
 
 fun ResearchProfile.toEntity(): ResearchProfileEntity = ResearchProfileEntity(
