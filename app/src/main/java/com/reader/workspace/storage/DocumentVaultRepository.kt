@@ -62,6 +62,10 @@ class DocumentVaultRepository private constructor(
         if (storedFile.exists() && !storedFile.delete()) {
             throw IOException("Unable to delete ${entity.displayName}")
         }
+
+        val marginaliaDao = ReaderDatabase.get(context).marginaliaDao()
+        marginaliaDao.deleteItemsForDocument(id)
+        marginaliaDao.deleteSettingsForDocument(id)
         dao.deleteById(id)
     }
 
