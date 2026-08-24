@@ -29,8 +29,10 @@ class ResearchPersistenceTest {
             id = "axis-1",
             title = "Cauze",
             patterns = listOf("cauz", "motiv", "factor"),
-            matchMode = LexicalMatchMode.PREFIX,
-            caseSensitive = false,
+            matchMode = LexicalMatchMode.CONTAINS,
+            caseSensitive = true,
+            diacriticsSensitive = false,
+            suffixMatch = true,
             enabled = true,
             colorArgb = 0xFF1E88E5L,
             marker = "⚑",
@@ -41,15 +43,18 @@ class ResearchPersistenceTest {
         assertEquals(model, model.toEntity().toModel())
         assertEquals(model.id, model.toLexicalAxis().id)
         assertEquals(model.patterns, model.toLexicalAxis().patterns)
+        assertEquals(model.diacriticsSensitive, model.toLexicalAxis().diacriticsSensitive)
+        assertEquals(model.suffixMatch, model.toLexicalAxis().suffixMatch)
     }
 
     @Test
-    fun `profile preserves ordered axis combination`() {
+    fun `profile preserves ordered axis combination and sentence scope`() {
         val profile = ResearchProfile(
             id = "profile-1",
             title = "Reformation causes",
             axisIds = listOf("causes", "reformation", "luther"),
             proximityChars = 450,
+            proximityScope = ProximityScope.SENTENCE,
             createdAtEpochMillis = 1L,
             updatedAtEpochMillis = 2L,
         )
@@ -58,7 +63,7 @@ class ResearchPersistenceTest {
     }
 
     @Test
-    fun `history preserves document range scope`() {
+    fun `history preserves document range and paragraph rule scope`() {
         val entry = ResearchHistoryEntry(
             id = "history-1",
             documentId = "doc-1",
@@ -72,14 +77,16 @@ class ResearchPersistenceTest {
             scope = ResearchHistoryScope.RANGE,
             rangeStartPageIndex = 9,
             rangeEndPageIndex = 24,
+            proximityScope = ProximityScope.PARAGRAPH,
         )
 
         assertEquals(entry, entry.toEntity().toModel())
         assertEquals("pages 10–25", entry.scopeLabel())
+        assertEquals("same paragraph", entry.ruleLabel())
     }
 
     @Test
-    fun `document history gets human readable label`() {
+    fun `document history gets human readable labels`() {
         val entry = ResearchHistoryEntry(
             id = "history-2",
             documentId = "doc-1",
@@ -93,8 +100,10 @@ class ResearchPersistenceTest {
             scope = ResearchHistoryScope.DOCUMENT,
             rangeStartPageIndex = 0,
             rangeEndPageIndex = 99,
+            proximityScope = ProximityScope.PAGE,
         )
 
         assertEquals("whole document", entry.scopeLabel())
+        assertEquals("same page", entry.ruleLabel())
     }
 }

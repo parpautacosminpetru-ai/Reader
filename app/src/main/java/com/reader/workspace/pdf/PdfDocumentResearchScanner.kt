@@ -3,6 +3,7 @@ package com.reader.workspace.pdf
 import com.reader.workspace.research.LexicalAxis
 import com.reader.workspace.research.LexicalSearchEngine
 import com.reader.workspace.research.ProximityRule
+import com.reader.workspace.research.ProximityScope
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 
@@ -86,6 +87,7 @@ class PdfDocumentResearchScanner(
         axes: List<LexicalAxis>,
         pageRange: IntRange,
         proximityChars: Int,
+        proximityScope: ProximityScope = ProximityScope.CHARACTERS,
         onProgress: (completedPages: Int, totalPages: Int) -> Unit = { _, _ -> },
     ): PdfResearchScanResult {
         val enabledAxes = axes.filter(LexicalAxis::enabled)
@@ -103,6 +105,7 @@ class PdfDocumentResearchScanner(
                 pageIndex = pageIndex,
                 axes = enabledAxes,
                 proximityChars = proximityChars.coerceAtLeast(0),
+                proximityScope = proximityScope,
             )
             results += pageResult
             onProgress(position + 1, total)
@@ -121,6 +124,7 @@ class PdfDocumentResearchScanner(
         pageIndex: Int,
         axes: List<LexicalAxis>,
         proximityChars: Int,
+        proximityScope: ProximityScope,
     ): PdfResearchPageScan {
         val resolved = textResolver.resolve(pageIndex)
         val text = resolved.text
@@ -147,8 +151,10 @@ class PdfDocumentResearchScanner(
                         id = "document-scan",
                         requiredAxisIds = activeAxisIds,
                         maxSpanChars = proximityChars,
+                        scope = proximityScope,
                     ),
                 ),
+                text = text,
             )
         }
 

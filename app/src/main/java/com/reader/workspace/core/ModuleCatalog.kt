@@ -28,8 +28,8 @@ object ModuleCatalog {
         ReaderModule(
             id = "research",
             title = "Lexical Research",
-            summary = "Parallel lexical axes, colored overlays, range/whole-document cartography, proximity rules and persistent profiles/history.",
-            status = "Active · v0.7",
+            summary = "Parallel lexical axes, native/OCR overlays, suffix and diacritics controls, structural intersection rules, cartography and persistent profiles/history.",
+            status = "Active · v0.9",
         ),
         ReaderModule(
             id = "marginalia",
