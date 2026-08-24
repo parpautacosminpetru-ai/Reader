@@ -1,6 +1,8 @@
 package com.reader.workspace.storage
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class VaultDocumentTest {
@@ -24,5 +26,24 @@ class VaultDocumentTest {
         assertEquals("1 KB", VaultDisplay.formatSize(1_024))
         assertEquals("1.5 KB", VaultDisplay.formatSize(1_536))
         assertEquals("1 MB", VaultDisplay.formatSize(1_048_576))
+    }
+
+    @Test
+    fun `pdf documents route to the local reader`() {
+        assertTrue(
+            VaultDisplay.isPdf(
+                VaultDocument("1", "book.PDF", "1.pdf", "application/octet-stream", 1, 0),
+            ),
+        )
+        assertTrue(
+            VaultDisplay.isPdf(
+                VaultDocument("2", "book", "2", "application/pdf", 1, 0),
+            ),
+        )
+        assertFalse(
+            VaultDisplay.isPdf(
+                VaultDocument("3", "notes.docx", "3.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document", 1, 0),
+            ),
+        )
     }
 }
