@@ -1,6 +1,8 @@
 package com.reader.workspace.pdf
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PdfPageSizingTest {
@@ -19,5 +21,12 @@ class PdfPageSizingTest {
     @Test(expected = IllegalArgumentException::class)
     fun fitWidthRejectsInvalidTargetWidth() {
         PdfPageSizing.fitWidth(600, 900, 0)
+    }
+
+    @Test
+    fun nativeTextExtractionStartsAtApi35() {
+        assertFalse(PdfTextSupport.isNativeTextExtractionAvailable(34))
+        assertTrue(PdfTextSupport.isNativeTextExtractionAvailable(35))
+        assertTrue(PdfTextSupport.isNativeTextExtractionAvailable(36))
     }
 }

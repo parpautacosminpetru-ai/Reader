@@ -55,4 +55,8 @@ object VaultDisplay {
             else -> "FILE"
         }
     }
+
+    fun isPdf(document: VaultDocument): Boolean =
+        VaultFileNames.extensionFrom(document.displayName) == "pdf" ||
+            document.mimeType.equals("application/pdf", ignoreCase = true)
 }

@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Matrix
 import android.graphics.pdf.PdfRenderer
+import android.os.Build
 import android.os.ParcelFileDescriptor
 import java.io.Closeable
 import java.io.File
@@ -30,6 +31,13 @@ object PdfPageSizing {
             height = (sourceHeight * scale).roundToInt().coerceAtLeast(1),
         )
     }
+}
+
+object PdfTextSupport {
+    const val MIN_NATIVE_TEXT_API: Int = 35
+
+    fun isNativeTextExtractionAvailable(sdkInt: Int = Build.VERSION.SDK_INT): Boolean =
+        sdkInt >= MIN_NATIVE_TEXT_API
 }
 
 class PdfRendererSession(file: File) : Closeable {
@@ -66,6 +74,23 @@ class PdfRendererSession(file: File) : Closeable {
                 PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY,
             )
             bitmap
+        } finally {
+            page.close()
+        }
+    }
+
+    fun extractPageText(pageIndex: Int): String? = synchronized(lock) {
+        require(pageIndex in 0 until renderer.pageCount) { "Page index out of range: $pageIndex" }
+        if (!PdfTextSupport.isNativeTextExtractionAvailable()) return@synchronized null
+
+        val page = renderer.openPage(pageIndex)
+        try {
+            page.textContents
+                .asSequence()
+                .map { it.text }
+                .filter { it.isNotBlank() }
+                .joinToString(separator = "\n")
+                .ifBlank { "" }
         } finally {
             page.close()
         }
