@@ -29,4 +29,24 @@ class PdfPageSizingTest {
         assertTrue(PdfTextSupport.isNativeTextExtractionAvailable(35))
         assertTrue(PdfTextSupport.isNativeTextExtractionAvailable(36))
     }
+
+    @Test
+    fun visualOverlayStartsAtApi35() {
+        assertFalse(PdfResearchOverlay.isAvailable(34))
+        assertTrue(PdfResearchOverlay.isAvailable(35))
+        assertTrue(PdfResearchOverlay.isAvailable(36))
+    }
+
+    @Test
+    fun overlayRectUsesSamePageScaleAsRenderer() {
+        val scaled = PdfResearchOverlay.scaleRect(
+            PdfPointRect(left = 10f, top = 20f, right = 110f, bottom = 50f),
+            scale = 2f,
+        )
+
+        assertEquals(20f, scaled.left)
+        assertEquals(40f, scaled.top)
+        assertEquals(220f, scaled.right)
+        assertEquals(100f, scaled.bottom)
+    }
 }
