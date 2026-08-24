@@ -3,13 +3,12 @@ package com.reader.workspace.pdf
 import com.reader.workspace.research.LexicalAxis
 import com.reader.workspace.research.LexicalSearchEngine
 import com.reader.workspace.research.ProximityRule
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.withContext
 
 enum class PdfResearchTextState {
     AVAILABLE,
+    OCR,
     EMPTY,
     UNSUPPORTED,
 }
@@ -43,6 +42,12 @@ data class PdfResearchScanResult(
     val pagesWithHits: Int
         get() = pages.count(PdfResearchPageScan::hasHits)
 
+    val nativeTextPages: Int
+        get() = pages.count { it.textState == PdfResearchTextState.AVAILABLE }
+
+    val ocrPages: Int
+        get() = pages.count { it.textState == PdfResearchTextState.OCR }
+
     val emptyTextPages: Int
         get() = pages.count { it.textState == PdfResearchTextState.EMPTY }
 
@@ -75,6 +80,7 @@ object PdfResearchPageRange {
 
 class PdfDocumentResearchScanner(
     private val session: PdfRendererSession,
+    private val textResolver: PdfPageTextResolver,
 ) {
     suspend fun scan(
         axes: List<LexicalAxis>,
@@ -93,13 +99,11 @@ class PdfDocumentResearchScanner(
 
         safeRange.forEachIndexed { position, pageIndex ->
             currentCoroutineContext().ensureActive()
-            val pageResult = withContext(Dispatchers.IO) {
-                scanPage(
-                    pageIndex = pageIndex,
-                    axes = enabledAxes,
-                    proximityChars = proximityChars.coerceAtLeast(0),
-                )
-            }
+            val pageResult = scanPage(
+                pageIndex = pageIndex,
+                axes = enabledAxes,
+                proximityChars = proximityChars.coerceAtLeast(0),
+            )
             results += pageResult
             onProgress(position + 1, total)
         }
@@ -113,22 +117,13 @@ class PdfDocumentResearchScanner(
         )
     }
 
-    private fun scanPage(
+    private suspend fun scanPage(
         pageIndex: Int,
         axes: List<LexicalAxis>,
         proximityChars: Int,
     ): PdfResearchPageScan {
-        val text = session.extractPageText(pageIndex)
-        if (text == null) {
-            return PdfResearchPageScan(
-                pageIndex = pageIndex,
-                textState = PdfResearchTextState.UNSUPPORTED,
-                characterCount = 0,
-                hitCount = 0,
-                intersectionCount = 0,
-                axisHitCounts = emptyMap(),
-            )
-        }
+        val resolved = textResolver.resolve(pageIndex)
+        val text = resolved.text
         if (text.isBlank()) {
             return PdfResearchPageScan(
                 pageIndex = pageIndex,
@@ -157,9 +152,15 @@ class PdfDocumentResearchScanner(
             )
         }
 
+        val textState = when (resolved.source) {
+            PdfPageTextSource.NATIVE -> PdfResearchTextState.AVAILABLE
+            PdfPageTextSource.OCR -> PdfResearchTextState.OCR
+            PdfPageTextSource.NONE -> PdfResearchTextState.EMPTY
+        }
+
         return PdfResearchPageScan(
             pageIndex = pageIndex,
-            textState = PdfResearchTextState.AVAILABLE,
+            textState = textState,
             characterCount = text.length,
             hitCount = hits.size,
             intersectionCount = intersections.size,

@@ -42,6 +42,7 @@ import kotlinx.coroutines.launch
 internal fun DocumentResearchCartographyPanel(
     documentId: String,
     session: PdfRendererSession,
+    textResolver: PdfPageTextResolver,
     pageCount: Int,
     activeAxes: List<ResearchAxisDefinition>,
     selectedProfileId: String?,
@@ -83,7 +84,10 @@ internal fun DocumentResearchCartographyPanel(
             totalPages = range.count()
             status = null
             try {
-                val scanner = PdfDocumentResearchScanner(session)
+                val scanner = PdfDocumentResearchScanner(
+                    session = session,
+                    textResolver = textResolver,
+                )
                 val result = scanner.scan(
                     axes = activeAxes.map(ResearchAxisDefinition::toLexicalAxis),
                     pageRange = range,
@@ -140,18 +144,15 @@ internal fun DocumentResearchCartographyPanel(
                 fontWeight = FontWeight.Bold,
             )
             Text(
-                text = "Scan a page range or the whole PDF with the currently active lexical axes. Only embedded text is read; page bitmaps are not kept in memory.",
+                text = "Scan a page range or the whole PDF with the active lexical axes. Reader uses embedded text when available and bundled on-device OCR for scanned/image-only pages.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-
-            if (!PdfTextSupport.isNativeTextExtractionAvailable()) {
-                Text(
-                    text = "Whole-document text scan currently needs Android 15/API 35+. OCR fallback will cover older/scanned documents later.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
+            Text(
+                text = "OCR model is bundled in Reader; scanning does not need a network connection.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+            )
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -187,7 +188,7 @@ internal fun DocumentResearchCartographyPanel(
                             historyScope = ResearchHistoryScope.RANGE,
                         )
                     },
-                    enabled = activeAxes.isNotEmpty() && !scanning && PdfTextSupport.isNativeTextExtractionAvailable(),
+                    enabled = activeAxes.isNotEmpty() && !scanning,
                 ) {
                     Text("Scan range")
                 }
@@ -198,7 +199,7 @@ internal fun DocumentResearchCartographyPanel(
                             historyScope = ResearchHistoryScope.DOCUMENT,
                         )
                     },
-                    enabled = activeAxes.isNotEmpty() && !scanning && PdfTextSupport.isNativeTextExtractionAvailable(),
+                    enabled = activeAxes.isNotEmpty() && !scanning,
                 ) {
                     Text("Scan whole PDF")
                 }
@@ -241,14 +242,11 @@ internal fun DocumentResearchCartographyPanel(
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.primary,
                 )
-
-                if (result.emptyTextPages > 0 || result.unsupportedTextPages > 0) {
-                    Text(
-                        text = "${result.emptyTextPages} page(s) had no embedded text; ${result.unsupportedTextPages} page(s) could not expose native text.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                Text(
+                    text = "Text sources: ${result.nativeTextPages} native · ${result.ocrPages} OCR · ${result.emptyTextPages} empty",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
 
                 val hitPages = result.pages.filter(PdfResearchPageScan::hasHits)
                 if (hitPages.isEmpty()) {
@@ -304,8 +302,14 @@ private fun CartographyPageRow(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(modifier = Modifier.weight(1f)) {
+                    val sourceLabel = when (page.textState) {
+                        PdfResearchTextState.AVAILABLE -> "native"
+                        PdfResearchTextState.OCR -> "OCR"
+                        PdfResearchTextState.EMPTY -> "empty"
+                        PdfResearchTextState.UNSUPPORTED -> "unavailable"
+                    }
                     Text(
-                        text = "Page ${page.pageIndex + 1} · ${page.hitCount} hits · ${page.intersectionCount} intersections",
+                        text = "Page ${page.pageIndex + 1} · ${page.hitCount} hits · ${page.intersectionCount} intersections · $sourceLabel",
                         style = MaterialTheme.typography.bodyMedium,
                         fontWeight = FontWeight.Medium,
                     )

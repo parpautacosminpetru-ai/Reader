@@ -39,6 +39,12 @@ data class PdfResolvedHighlight(
     val rects: List<PdfPointRect>,
 )
 
+data class PdfAnalysisRender(
+    val bitmap: Bitmap,
+    val pageWidthPoints: Int,
+    val pageHeightPoints: Int,
+)
+
 object PdfPageSizing {
     fun fitWidth(
         sourceWidth: Int,
@@ -129,6 +135,40 @@ class PdfRendererSession(file: File) : Closeable {
             )
             drawResearchHighlights(bitmap, highlights, scale)
             bitmap
+        } finally {
+            page.close()
+        }
+    }
+
+    fun renderPageForAnalysis(
+        pageIndex: Int,
+        targetWidthPx: Int,
+    ): PdfAnalysisRender = synchronized(lock) {
+        require(pageIndex in 0 until renderer.pageCount) { "Page index out of range: $pageIndex" }
+        require(targetWidthPx > 0) { "targetWidthPx must be positive" }
+
+        val page = renderer.openPage(pageIndex)
+        try {
+            val target = PdfPageSizing.fitWidth(
+                sourceWidth = page.width,
+                sourceHeight = page.height,
+                targetWidth = targetWidthPx,
+            )
+            val bitmap = Bitmap.createBitmap(target.width, target.height, Bitmap.Config.ARGB_8888)
+            bitmap.eraseColor(Color.WHITE)
+            val scale = target.width.toFloat() / page.width
+            val matrix = Matrix().apply { postScale(scale, scale) }
+            page.render(
+                bitmap,
+                null,
+                matrix,
+                PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY,
+            )
+            PdfAnalysisRender(
+                bitmap = bitmap,
+                pageWidthPoints = page.width,
+                pageHeightPoints = page.height,
+            )
         } finally {
             page.close()
         }
