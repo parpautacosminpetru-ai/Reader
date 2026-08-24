@@ -23,7 +23,7 @@ import com.reader.workspace.research.ResearchProfileEntity
         ResearchProfileEntity::class,
         ResearchHistoryEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = false,
 )
 abstract class ReaderDatabase : RoomDatabase() {
@@ -126,13 +126,27 @@ abstract class ReaderDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "ALTER TABLE research_history ADD COLUMN scope TEXT NOT NULL DEFAULT 'PAGE'",
+                )
+                db.execSQL(
+                    "ALTER TABLE research_history ADD COLUMN rangeStartPageIndex INTEGER",
+                )
+                db.execSQL(
+                    "ALTER TABLE research_history ADD COLUMN rangeEndPageIndex INTEGER",
+                )
+            }
+        }
+
         fun get(context: Context): ReaderDatabase = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(
                 context.applicationContext,
                 ReaderDatabase::class.java,
                 "reader.db",
             )
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .build()
                 .also { instance = it }
         }
