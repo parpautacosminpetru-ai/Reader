@@ -28,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.reader.workspace.research.ProximityScope
 import com.reader.workspace.research.ResearchAxisDefinition
 import com.reader.workspace.research.ResearchHistoryEntry
 import com.reader.workspace.research.ResearchHistoryScope
@@ -47,6 +48,7 @@ internal fun DocumentResearchCartographyPanel(
     activeAxes: List<ResearchAxisDefinition>,
     selectedProfileId: String?,
     proximityChars: Int,
+    proximityScope: ProximityScope = ProximityScope.CHARACTERS,
     repository: ResearchRepository,
     onNavigateToPage: (Int) -> Unit,
 ) {
@@ -61,10 +63,16 @@ internal fun DocumentResearchCartographyPanel(
     var scanJob by remember(documentId) { mutableStateOf<Job?>(null) }
 
     val axisSignature = activeAxes.map { axis ->
-        Triple(axis.id, axis.updatedAtEpochMillis, axis.matchMode)
+        listOf(
+            axis.id,
+            axis.updatedAtEpochMillis.toString(),
+            axis.matchMode.name,
+            axis.caseSensitive.toString(),
+            axis.diacriticsSensitive.toString(),
+        ).joinToString(":")
     }
 
-    LaunchedEffect(axisSignature, proximityChars) {
+    LaunchedEffect(axisSignature, proximityChars, proximityScope) {
         if (scanning) scanJob?.cancel()
         scanResult = null
         completedPages = 0
@@ -92,6 +100,7 @@ internal fun DocumentResearchCartographyPanel(
                     axes = activeAxes.map(ResearchAxisDefinition::toLexicalAxis),
                     pageRange = range,
                     proximityChars = proximityChars,
+                    proximityScope = proximityScope,
                 ) { completed, total ->
                     completedPages = completed
                     totalPages = total
@@ -112,6 +121,7 @@ internal fun DocumentResearchCartographyPanel(
                         scope = historyScope,
                         rangeStartPageIndex = result.startPageIndex,
                         rangeEndPageIndex = result.endPageIndex,
+                        proximityScope = proximityScope,
                     ),
                 )
                 status = when (historyScope) {
@@ -149,7 +159,7 @@ internal fun DocumentResearchCartographyPanel(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
-                text = "OCR model is bundled in Reader; scanning does not need a network connection.",
+                text = "Intersection rule: ${proximityScopeLabel(proximityScope, proximityChars)} · deterministic/offline",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.primary,
             )
@@ -345,6 +355,13 @@ private fun CartographyPageRow(
             }
         }
     }
+}
+
+private fun proximityScopeLabel(scope: ProximityScope, chars: Int): String = when (scope) {
+    ProximityScope.CHARACTERS -> "within ${chars.coerceAtLeast(0)} characters"
+    ProximityScope.SENTENCE -> "same sentence"
+    ProximityScope.PARAGRAPH -> "same paragraph"
+    ProximityScope.PAGE -> "same page"
 }
 
 private fun densityBar(
