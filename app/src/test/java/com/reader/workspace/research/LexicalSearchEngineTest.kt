@@ -23,12 +23,13 @@ class LexicalSearchEngineTest {
     }
 
     @Test
-    fun suffixModeFindsWordEndingsWithoutMatchingWordMiddles() {
+    fun suffixOptionFindsWordEndingsWithoutMatchingWordMiddles() {
         val axis = LexicalAxis(
             id = "ending",
             title = "Endings",
             patterns = listOf("ism"),
-            matchMode = LexicalMatchMode.SUFFIX,
+            matchMode = LexicalMatchMode.CONTAINS,
+            suffixMatch = true,
         )
 
         val hits = LexicalSearchEngine.search(
