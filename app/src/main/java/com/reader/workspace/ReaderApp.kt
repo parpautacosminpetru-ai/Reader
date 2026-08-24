@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import com.reader.workspace.core.ModuleCatalog
 import com.reader.workspace.core.ReaderModule
 import com.reader.workspace.pdf.PdfReaderWorkspaceScreen
+import com.reader.workspace.research.ResearchCartographyScreen
 import com.reader.workspace.storage.DocumentsScreen
 import com.reader.workspace.storage.VaultDocument
 
@@ -53,8 +54,13 @@ fun ReaderApp() {
                     onBack = { selectedModule = null },
                     onOpenDocument = { document -> selectedDocument = document },
                 )
+                selectedModule == "research" -> ResearchCartographyScreen(
+                    onBack = { selectedModule = null },
+                )
                 else -> HomeScreen(onOpenModule = { moduleId ->
-                    if (moduleId == "documents") selectedModule = moduleId
+                    if (moduleId == "documents" || moduleId == "research") {
+                        selectedModule = moduleId
+                    }
                 })
             }
         }
@@ -89,7 +95,7 @@ private fun ReaderHeader() {
             fontWeight = FontWeight.Bold,
         )
         Text(
-            text = "Offline workspace · Visual Research 0.6",
+            text = "Offline workspace · Document Cartography 0.7",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -122,7 +128,7 @@ private fun ModuleCard(
     module: ReaderModule,
     onClick: () -> Unit,
 ) {
-    val enabled = module.id == "documents"
+    val enabled = module.id == "documents" || module.id == "research"
     Card(
         modifier = Modifier
             .fillMaxWidth()

@@ -56,4 +56,45 @@ class ResearchPersistenceTest {
 
         assertEquals(profile, profile.toEntity().toModel())
     }
+
+    @Test
+    fun `history preserves document range scope`() {
+        val entry = ResearchHistoryEntry(
+            id = "history-1",
+            documentId = "doc-1",
+            pageIndex = 9,
+            profileId = "profile-1",
+            axisIds = listOf("causes", "reformation"),
+            proximityChars = 300,
+            hitCount = 42,
+            intersectionCount = 7,
+            executedAtEpochMillis = 99L,
+            scope = ResearchHistoryScope.RANGE,
+            rangeStartPageIndex = 9,
+            rangeEndPageIndex = 24,
+        )
+
+        assertEquals(entry, entry.toEntity().toModel())
+        assertEquals("pages 10–25", entry.scopeLabel())
+    }
+
+    @Test
+    fun `document history gets human readable label`() {
+        val entry = ResearchHistoryEntry(
+            id = "history-2",
+            documentId = "doc-1",
+            pageIndex = 0,
+            profileId = null,
+            axisIds = listOf("a"),
+            proximityChars = 0,
+            hitCount = 1,
+            intersectionCount = 0,
+            executedAtEpochMillis = 100L,
+            scope = ResearchHistoryScope.DOCUMENT,
+            rangeStartPageIndex = 0,
+            rangeEndPageIndex = 99,
+        )
+
+        assertEquals("whole document", entry.scopeLabel())
+    }
 }
