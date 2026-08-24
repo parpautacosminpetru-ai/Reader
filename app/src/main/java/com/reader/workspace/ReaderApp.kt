@@ -20,6 +20,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -28,11 +29,14 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.reader.workspace.core.ModuleCatalog
 import com.reader.workspace.core.ReaderModule
+import com.reader.workspace.pdf.PdfReaderScreen
 import com.reader.workspace.storage.DocumentsScreen
+import com.reader.workspace.storage.VaultDocument
 
 @Composable
 fun ReaderApp() {
     var selectedModule by rememberSaveable { mutableStateOf<String?>(null) }
+    var selectedDocument by remember { mutableStateOf<VaultDocument?>(null) }
 
     MaterialTheme {
         Surface(
@@ -40,8 +44,15 @@ fun ReaderApp() {
                 .fillMaxSize()
                 .safeDrawingPadding(),
         ) {
-            when (selectedModule) {
-                "documents" -> DocumentsScreen(onBack = { selectedModule = null })
+            when {
+                selectedDocument != null -> PdfReaderScreen(
+                    document = selectedDocument!!,
+                    onBack = { selectedDocument = null },
+                )
+                selectedModule == "documents" -> DocumentsScreen(
+                    onBack = { selectedModule = null },
+                    onOpenDocument = { document -> selectedDocument = document },
+                )
                 else -> HomeScreen(onOpenModule = { moduleId ->
                     if (moduleId == "documents") selectedModule = moduleId
                 })
@@ -78,7 +89,7 @@ private fun ReaderHeader() {
             fontWeight = FontWeight.Bold,
         )
         Text(
-            text = "Offline workspace · Document Vault 0.2",
+            text = "Offline workspace · Reader Tools 0.3",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
