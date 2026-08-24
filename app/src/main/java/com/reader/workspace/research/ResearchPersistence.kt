@@ -1,6 +1,7 @@
 package com.reader.workspace.research
 
 import android.content.Context
+import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Entity
 import androidx.room.Index
@@ -49,7 +50,7 @@ data class ResearchHistoryEntity(
     val proximityChars: Int,
     val hitCount: Int,
     val intersectionCount: Int,
-    val scope: String,
+    @ColumnInfo(defaultValue = "'PAGE'") val scope: String,
     val rangeStartPageIndex: Int?,
     val rangeEndPageIndex: Int?,
     val executedAtEpochMillis: Long,
