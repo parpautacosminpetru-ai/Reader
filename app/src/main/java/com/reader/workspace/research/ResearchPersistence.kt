@@ -49,6 +49,9 @@ data class ResearchHistoryEntity(
     val proximityChars: Int,
     val hitCount: Int,
     val intersectionCount: Int,
+    val scope: String,
+    val rangeStartPageIndex: Int?,
+    val rangeEndPageIndex: Int?,
     val executedAtEpochMillis: Long,
 )
 
@@ -116,6 +119,12 @@ data class ResearchProfile(
     val updatedAtEpochMillis: Long,
 )
 
+enum class ResearchHistoryScope {
+    PAGE,
+    RANGE,
+    DOCUMENT,
+}
+
 data class ResearchHistoryEntry(
     val id: String,
     val documentId: String,
@@ -126,7 +135,20 @@ data class ResearchHistoryEntry(
     val hitCount: Int,
     val intersectionCount: Int,
     val executedAtEpochMillis: Long,
-)
+    val scope: ResearchHistoryScope = ResearchHistoryScope.PAGE,
+    val rangeStartPageIndex: Int? = null,
+    val rangeEndPageIndex: Int? = null,
+) {
+    fun scopeLabel(): String = when (scope) {
+        ResearchHistoryScope.PAGE -> "page ${pageIndex + 1}"
+        ResearchHistoryScope.RANGE -> {
+            val start = (rangeStartPageIndex ?: pageIndex) + 1
+            val end = (rangeEndPageIndex ?: rangeStartPageIndex ?: pageIndex) + 1
+            "pages $start–$end"
+        }
+        ResearchHistoryScope.DOCUMENT -> "whole document"
+    }
+}
 
 class ResearchRepository private constructor(
     private val dao: ResearchDao,
@@ -276,6 +298,9 @@ fun ResearchHistoryEntity.toModel(): ResearchHistoryEntry = ResearchHistoryEntry
     hitCount = hitCount.coerceAtLeast(0),
     intersectionCount = intersectionCount.coerceAtLeast(0),
     executedAtEpochMillis = executedAtEpochMillis,
+    scope = runCatching { ResearchHistoryScope.valueOf(scope) }.getOrDefault(ResearchHistoryScope.PAGE),
+    rangeStartPageIndex = rangeStartPageIndex,
+    rangeEndPageIndex = rangeEndPageIndex,
 )
 
 fun ResearchHistoryEntry.toEntity(): ResearchHistoryEntity = ResearchHistoryEntity(
@@ -287,5 +312,8 @@ fun ResearchHistoryEntry.toEntity(): ResearchHistoryEntity = ResearchHistoryEnti
     proximityChars = proximityChars.coerceAtLeast(0),
     hitCount = hitCount.coerceAtLeast(0),
     intersectionCount = intersectionCount.coerceAtLeast(0),
+    scope = scope.name,
+    rangeStartPageIndex = rangeStartPageIndex,
+    rangeEndPageIndex = rangeEndPageIndex,
     executedAtEpochMillis = executedAtEpochMillis,
 )
