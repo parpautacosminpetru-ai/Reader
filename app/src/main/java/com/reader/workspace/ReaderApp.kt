@@ -1,5 +1,6 @@
 package com.reader.workspace
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -17,28 +18,49 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.reader.workspace.core.ModuleCatalog
 import com.reader.workspace.core.ReaderModule
+import com.reader.workspace.storage.DocumentsScreen
 
 @Composable
 fun ReaderApp() {
+    var selectedModule by rememberSaveable { mutableStateOf<String?>(null) }
+
     MaterialTheme {
-        Surface(modifier = Modifier.fillMaxSize()) {
-            Scaffold(
-                modifier = Modifier.safeDrawingPadding(),
-                topBar = { ReaderHeader() },
-            ) { innerPadding ->
-                ModuleGrid(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(innerPadding),
-                )
+        Surface(
+            modifier = Modifier
+                .fillMaxSize()
+                .safeDrawingPadding(),
+        ) {
+            when (selectedModule) {
+                "documents" -> DocumentsScreen(onBack = { selectedModule = null })
+                else -> HomeScreen(onOpenModule = { moduleId ->
+                    if (moduleId == "documents") selectedModule = moduleId
+                })
             }
         }
+    }
+}
+
+@Composable
+private fun HomeScreen(onOpenModule: (String) -> Unit) {
+    Scaffold(
+        topBar = { ReaderHeader() },
+    ) { innerPadding ->
+        ModuleGrid(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding),
+            onOpenModule = onOpenModule,
+        )
     }
 }
 
@@ -56,7 +78,7 @@ private fun ReaderHeader() {
             fontWeight = FontWeight.Bold,
         )
         Text(
-            text = "Offline workspace · Foundation 0.1",
+            text = "Offline workspace · Document Vault 0.2",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -64,7 +86,10 @@ private fun ReaderHeader() {
 }
 
 @Composable
-private fun ModuleGrid(modifier: Modifier = Modifier) {
+private fun ModuleGrid(
+    modifier: Modifier = Modifier,
+    onOpenModule: (String) -> Unit,
+) {
     LazyVerticalGrid(
         columns = GridCells.Adaptive(minSize = 260.dp),
         modifier = modifier,
@@ -73,15 +98,24 @@ private fun ModuleGrid(modifier: Modifier = Modifier) {
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         items(ModuleCatalog.modules, key = { it.id }) { module ->
-            ModuleCard(module)
+            ModuleCard(
+                module = module,
+                onClick = { onOpenModule(module.id) },
+            )
         }
     }
 }
 
 @Composable
-private fun ModuleCard(module: ReaderModule) {
+private fun ModuleCard(
+    module: ReaderModule,
+    onClick: () -> Unit,
+) {
+    val enabled = module.id == "documents"
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = enabled, onClick = onClick),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceContainer,
         ),
@@ -101,9 +135,13 @@ private fun ModuleCard(module: ReaderModule) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Text(
-                text = module.status,
+                text = if (enabled) "Open · ${module.status}" else module.status,
                 style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.primary,
+                color = if (enabled) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
             )
         }
     }
