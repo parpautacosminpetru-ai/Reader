@@ -63,9 +63,10 @@ class DocumentVaultRepository private constructor(
             throw IOException("Unable to delete ${entity.displayName}")
         }
 
-        val marginaliaDao = ReaderDatabase.get(context).marginaliaDao()
-        marginaliaDao.deleteItemsForDocument(id)
-        marginaliaDao.deleteSettingsForDocument(id)
+        val database = ReaderDatabase.get(context)
+        database.marginaliaDao().deleteItemsForDocument(id)
+        database.marginaliaDao().deleteSettingsForDocument(id)
+        database.researchDao().deleteHistoryForDocument(id)
         dao.deleteById(id)
     }
 
