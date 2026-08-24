@@ -23,7 +23,7 @@ class DocumentVaultRepository private constructor(
     }
 
     val documents: Flow<List<VaultDocument>> = dao.observeAll().map { entities ->
-        entities.map(VaultDocumentEntity::toModel)
+        entities.map { it.toModel() }
     }
 
     suspend fun importDocument(uri: Uri): VaultDocument = withContext(Dispatchers.IO) {
@@ -36,7 +36,7 @@ class DocumentVaultRepository private constructor(
             context.contentResolver.openInputStream(uri).use { input ->
                 if (input == null) throw IOException("Unable to open selected document")
                 destination.outputStream().use { output ->
-                    input.copyTo(output, DEFAULT_COPY_BUFFER_SIZE)
+                    input.copyTo(output)
                 }
             }
 
