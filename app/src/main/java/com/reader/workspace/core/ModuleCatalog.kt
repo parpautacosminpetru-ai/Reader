@@ -12,8 +12,8 @@ object ModuleCatalog {
         ReaderModule(
             id = "documents",
             title = "Documents",
-            summary = "Local vault, library, import/export and persistent document metadata.",
-            status = "Foundation",
+            summary = "App-owned offline vault with multi-file import and persistent document metadata.",
+            status = "Active · v0.2",
         ),
         ReaderModule(
             id = "office",
