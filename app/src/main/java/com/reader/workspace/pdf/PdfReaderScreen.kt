@@ -30,12 +30,12 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -48,6 +48,7 @@ import com.reader.workspace.marginalia.DocumentAnchor
 import com.reader.workspace.marginalia.MarginaliaGeometry
 import com.reader.workspace.marginalia.MarginaliaItem
 import com.reader.workspace.marginalia.MarginaliaItemKind
+import com.reader.workspace.marginalia.MarginaliaRepository
 import com.reader.workspace.research.LexicalAxis
 import com.reader.workspace.research.LexicalHit
 import com.reader.workspace.research.LexicalMatchMode
@@ -58,6 +59,7 @@ import com.reader.workspace.storage.DocumentVaultRepository
 import com.reader.workspace.storage.VaultDocument
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 @Composable
@@ -66,10 +68,10 @@ fun PdfReaderScreen(
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
-    val repository = remember(context.applicationContext) {
+    val vaultRepository = remember(context.applicationContext) {
         DocumentVaultRepository.get(context.applicationContext)
     }
-    val file = remember(document.id) { repository.localFile(document) }
+    val file = remember(document.id) { vaultRepository.localFile(document) }
     val sessionResult = remember(file.absolutePath) { runCatching { PdfRendererSession(file) } }
     val session = sessionResult.getOrNull()
 
@@ -219,8 +221,19 @@ private fun PdfAndMarginaliaArea(
     pageText: String,
     showMarginalia: Boolean,
 ) {
+    val context = LocalContext.current
+    val marginaliaRepository = remember(context.applicationContext) {
+        MarginaliaRepository.get(context.applicationContext)
+    }
+    val storedWidth by remember(document.id) {
+        marginaliaRepository.observeWidth(document.id)
+    }.collectAsState(initial = MarginaliaGeometry.DEFAULT_WIDTH_FRACTION)
     var marginaliaWidth by remember(document.id) {
         mutableFloatStateOf(MarginaliaGeometry.DEFAULT_WIDTH_FRACTION)
+    }
+
+    LaunchedEffect(storedWidth) {
+        marginaliaWidth = storedWidth
     }
 
     Row(modifier = modifier.fillMaxSize()) {
@@ -238,6 +251,7 @@ private fun PdfAndMarginaliaArea(
                 document = document,
                 pageIndex = pageIndex,
                 pageText = pageText,
+                repository = marginaliaRepository,
                 widthFraction = marginaliaWidth,
                 onWidthFractionChange = {
                     marginaliaWidth = MarginaliaGeometry.clampWidthFraction(it)
@@ -277,23 +291,19 @@ private fun PdfPageViewport(
         }
 
         when {
-            renderError != null -> {
-                Text(
-                    text = "Could not render this page: $renderError",
-                    modifier = Modifier.padding(20.dp),
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
-            bitmap == null -> {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(20.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                    Text("Rendering page locally…")
-                }
+            renderError != null -> Text(
+                text = "Could not render this page: $renderError",
+                modifier = Modifier.padding(20.dp),
+                color = MaterialTheme.colorScheme.error,
+            )
+            bitmap == null -> Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                Text("Rendering page locally…")
             }
             else -> {
                 val horizontalScroll = rememberScrollState()
@@ -323,17 +333,24 @@ private fun MarginaliaPanel(
     document: VaultDocument,
     pageIndex: Int,
     pageText: String,
+    repository: MarginaliaRepository,
     widthFraction: Float,
     onWidthFractionChange: (Float) -> Unit,
 ) {
-    val pageNotes = remember(document.id) { mutableStateMapOf<Int, String>() }
-    val sessionItems = remember(document.id) { mutableStateListOf<MarginaliaItem>() }
+    val scope = rememberCoroutineScope()
+    val allItems by remember(document.id) {
+        repository.observeItems(document.id)
+    }.collectAsState(initial = emptyList())
+    var note by remember(document.id, pageIndex) { mutableStateOf("") }
+    var status by remember(document.id) { mutableStateOf<String?>(null) }
+
     val anchor = remember(document.id, pageIndex) {
         DocumentAnchor(documentId = document.id, pageIndex = pageIndex)
     }
     val anchorRange = MarginaliaGeometry.anchorVerticalRange(anchor, pageText.length)
-    val note = pageNotes[pageIndex].orEmpty()
-    val pageItems = sessionItems.filter { it.anchor.pageIndex == pageIndex }
+    val pageItems = remember(allItems, pageIndex) {
+        allItems.filter { it.anchor.pageIndex == pageIndex }
+    }
 
     Column(
         modifier = modifier
@@ -345,7 +362,7 @@ private fun MarginaliaPanel(
     ) {
         Text("Marginalia", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         Text(
-            "Anchored to page ${pageIndex + 1} · non-destructive layer",
+            "Page ${pageIndex + 1} · persistent local layer",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -354,12 +371,18 @@ private fun MarginaliaPanel(
         Slider(
             value = widthFraction,
             onValueChange = onWidthFractionChange,
+            onValueChangeFinished = {
+                scope.launch {
+                    repository.saveWidth(document.id, widthFraction)
+                    status = "Margin width saved."
+                }
+            },
             valueRange = MarginaliaGeometry.MIN_WIDTH_FRACTION..MarginaliaGeometry.MAX_WIDTH_FRACTION,
         )
 
         OutlinedTextField(
             value = note,
-            onValueChange = { pageNotes[pageIndex] = it },
+            onValueChange = { note = it },
             modifier = Modifier.fillMaxWidth(),
             label = { Text("Page note") },
             minLines = 3,
@@ -367,25 +390,37 @@ private fun MarginaliaPanel(
 
         Button(
             onClick = {
-                if (note.isNotBlank()) {
-                    sessionItems += MarginaliaGeometry.normalize(
-                        MarginaliaItem(
-                            id = UUID.randomUUID().toString(),
-                            anchor = anchor,
-                            kind = MarginaliaItemKind.TEXT,
-                            xFraction = 0.05f,
-                            yFraction = 0.05f,
-                            widthFraction = 0.9f,
-                            heightFraction = 0.15f,
-                            text = note,
-                        ),
-                    )
-                    pageNotes[pageIndex] = ""
+                val text = note.trim()
+                if (text.isNotEmpty()) {
+                    scope.launch {
+                        repository.saveItem(
+                            MarginaliaItem(
+                                id = UUID.randomUUID().toString(),
+                                anchor = anchor,
+                                kind = MarginaliaItemKind.TEXT,
+                                xFraction = 0.05f,
+                                yFraction = 0.05f,
+                                widthFraction = 0.9f,
+                                heightFraction = 0.15f,
+                                text = text,
+                            ),
+                        )
+                        note = ""
+                        status = "Marker saved locally."
+                    }
                 }
             },
             enabled = note.isNotBlank(),
         ) {
-            Text("Add text marker")
+            Text("Save text marker")
+        }
+
+        status?.let {
+            Text(
+                text = it,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+            )
         }
 
         Text(
@@ -393,16 +428,29 @@ private fun MarginaliaPanel(
             style = MaterialTheme.typography.bodySmall,
         )
         Text(
-            "Session draft: permanent Marginalia storage is the next persistence step.",
+            "${pageItems.size} saved marker(s) on this page · source PDF unchanged",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
         pageItems.forEach { item ->
             Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(10.dp)) {
+                Column(
+                    modifier = Modifier.padding(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
                     Text(item.kind.name, style = MaterialTheme.typography.labelMedium)
                     Text(item.text.orEmpty(), style = MaterialTheme.typography.bodyMedium)
+                    TextButton(
+                        onClick = {
+                            scope.launch {
+                                repository.deleteItem(item.id)
+                                status = "Marker deleted."
+                            }
+                        },
+                    ) {
+                        Text("Delete marker")
+                    }
                 }
             }
         }
@@ -423,14 +471,10 @@ private fun ResearchPanel(
     val sourceText = pageText.orEmpty()
     val axes = remember(axisA, axisB, matchMode) {
         buildList {
-            val a = splitPatterns(axisA)
-            if (a.isNotEmpty()) {
-                add(LexicalAxis("axis-a", "Axis A", a, matchMode))
-            }
-            val b = splitPatterns(axisB)
-            if (b.isNotEmpty()) {
-                add(LexicalAxis("axis-b", "Axis B", b, matchMode))
-            }
+            val first = splitPatterns(axisA)
+            if (first.isNotEmpty()) add(LexicalAxis("axis-a", "Axis A", first, matchMode))
+            val second = splitPatterns(axisB)
+            if (second.isNotEmpty()) add(LexicalAxis("axis-b", "Axis B", second, matchMode))
         }
     }
     val hits = remember(sourceText, axes) { LexicalSearchEngine.search(sourceText, axes) }
@@ -472,12 +516,12 @@ private fun ResearchPanel(
                     Text("Reading page text locally…", style = MaterialTheme.typography.bodySmall)
                 }
                 pageText == null -> Text(
-                    "Native PDF text extraction is unavailable on this Android version. OCR fallback will handle this path later.",
+                    "Native PDF text extraction is unavailable here. OCR fallback is a later step.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 pageText.isEmpty() -> Text(
-                    "No embedded text was found on this page. It may be a scanned/image-only page.",
+                    "No embedded text was found on this page. It may be scanned/image-only.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -495,15 +539,13 @@ private fun ResearchPanel(
                 value = axisA,
                 onValueChange = { axisA = it },
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("Axis A forms (comma/newline separated)") },
-                singleLine = false,
+                label = { Text("Axis A forms") },
             )
             OutlinedTextField(
                 value = axisB,
                 onValueChange = { axisB = it },
                 modifier = Modifier.fillMaxWidth(),
                 label = { Text("Axis B forms (optional)") },
-                singleLine = false,
             )
             OutlinedTextField(
                 value = proximityChars,
@@ -518,7 +560,6 @@ private fun ResearchPanel(
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.primary,
             )
-
             ResearchResults(hits = hits, proximity = proximity)
         }
     }
@@ -543,7 +584,8 @@ private fun ResearchResults(
         Text("Intersections", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
         proximity.take(8).forEach { match ->
             Text(
-                "span ${match.startOffset}–${match.endOffsetExclusive} · ${match.hits.map { it.axisTitle }.distinct().joinToString(" + ")}",
+                "span ${match.startOffset}–${match.endOffsetExclusive} · " +
+                    match.hits.map { it.axisTitle }.distinct().joinToString(" + "),
                 style = MaterialTheme.typography.bodySmall,
             )
         }
