@@ -34,7 +34,10 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 
 @Composable
-fun DocumentsScreen(onBack: () -> Unit) {
+fun DocumentsScreen(
+    onBack: () -> Unit,
+    onOpenDocument: (VaultDocument) -> Unit,
+) {
     val context = LocalContext.current
     val repository = remember(context.applicationContext) {
         DocumentVaultRepository.get(context.applicationContext)
@@ -149,6 +152,7 @@ fun DocumentsScreen(onBack: () -> Unit) {
                     items(documents, key = { it.id }) { document ->
                         VaultDocumentCard(
                             document = document,
+                            onOpen = { onOpenDocument(document) },
                             onDelete = { pendingDelete = document },
                         )
                     }
@@ -215,8 +219,11 @@ private fun EmptyVault() {
 @Composable
 private fun VaultDocumentCard(
     document: VaultDocument,
+    onOpen: () -> Unit,
     onDelete: () -> Unit,
 ) {
+    val canOpen = VaultDisplay.isPdf(document)
+
     Card(modifier = Modifier.fillMaxWidth()) {
         Row(
             modifier = Modifier
@@ -239,6 +246,9 @@ private fun VaultDocumentCard(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+            TextButton(onClick = onOpen, enabled = canOpen) {
+                Text(if (canOpen) "Open" else "Viewer later")
             }
             TextButton(onClick = onDelete) {
                 Text("Delete")
