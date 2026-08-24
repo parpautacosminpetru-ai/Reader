@@ -231,7 +231,7 @@ object LexicalSearchEngine {
             }
         }
         if (start < text.length) result += start until text.length
-        return result.filterNot(IntRange::isEmpty)
+        return result.filterNot { it.isEmpty() }
     }
 
     private fun paragraphRanges(text: String): List<IntRange> {
