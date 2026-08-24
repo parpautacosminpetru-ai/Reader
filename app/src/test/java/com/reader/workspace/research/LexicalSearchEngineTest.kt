@@ -149,7 +149,8 @@ class LexicalSearchEngineTest {
         )
 
         assertEquals(1, matches.size)
-        assertTrue(text.substring(matches.single().startOffset, matches.single().endOffsetExclusive).contains("Motivul și reforma"))
+        assertEquals(setOf("cause", "reform"), matches.single().hits.map(LexicalHit::axisId).toSet())
+        assertTrue(matches.single().startOffset > text.indexOf("separat."))
     }
 
     @Test
