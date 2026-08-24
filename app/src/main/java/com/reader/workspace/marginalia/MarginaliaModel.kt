@@ -14,6 +14,7 @@ enum class MarginaliaItemKind {
     EMOJI,
     MODEL_3D,
     SHAPE,
+    RESEARCH_LINK,
 }
 
 data class MarginaliaItem(
