@@ -20,6 +20,7 @@ data class ResearchAxisEntity(
     val patternsEncoded: String,
     val matchMode: String,
     val caseSensitive: Boolean,
+    @ColumnInfo(defaultValue = "1") val diacriticsSensitive: Boolean,
     val enabled: Boolean,
     val colorArgb: Long,
     val marker: String?,
@@ -33,6 +34,7 @@ data class ResearchProfileEntity(
     val title: String,
     val axisIdsEncoded: String,
     val proximityChars: Int,
+    @ColumnInfo(defaultValue = "'CHARACTERS'") val proximityScope: String,
     val createdAtEpochMillis: Long,
     val updatedAtEpochMillis: Long,
 )
@@ -53,6 +55,7 @@ data class ResearchHistoryEntity(
     @ColumnInfo(defaultValue = "'PAGE'") val scope: String,
     val rangeStartPageIndex: Int?,
     val rangeEndPageIndex: Int?,
+    @ColumnInfo(defaultValue = "'CHARACTERS'") val proximityScope: String,
     val executedAtEpochMillis: Long,
 )
 
@@ -95,6 +98,7 @@ data class ResearchAxisDefinition(
     val patterns: List<String>,
     val matchMode: LexicalMatchMode,
     val caseSensitive: Boolean = false,
+    val diacriticsSensitive: Boolean = true,
     val enabled: Boolean = true,
     val colorArgb: Long = ResearchPalette.DEFAULT_COLORS.first(),
     val marker: String? = null,
@@ -107,6 +111,7 @@ data class ResearchAxisDefinition(
         patterns = patterns,
         matchMode = matchMode,
         caseSensitive = caseSensitive,
+        diacriticsSensitive = diacriticsSensitive,
         enabled = enabled,
     )
 }
@@ -116,6 +121,7 @@ data class ResearchProfile(
     val title: String,
     val axisIds: List<String>,
     val proximityChars: Int,
+    val proximityScope: ProximityScope = ProximityScope.CHARACTERS,
     val createdAtEpochMillis: Long,
     val updatedAtEpochMillis: Long,
 )
@@ -139,6 +145,7 @@ data class ResearchHistoryEntry(
     val scope: ResearchHistoryScope = ResearchHistoryScope.PAGE,
     val rangeStartPageIndex: Int? = null,
     val rangeEndPageIndex: Int? = null,
+    val proximityScope: ProximityScope = ProximityScope.CHARACTERS,
 ) {
     fun scopeLabel(): String = when (scope) {
         ResearchHistoryScope.PAGE -> "page ${pageIndex + 1}"
@@ -148,6 +155,13 @@ data class ResearchHistoryEntry(
             "pages $start–$end"
         }
         ResearchHistoryScope.DOCUMENT -> "whole document"
+    }
+
+    fun ruleLabel(): String = when (proximityScope) {
+        ProximityScope.CHARACTERS -> "within $proximityChars chars"
+        ProximityScope.SENTENCE -> "same sentence"
+        ProximityScope.PARAGRAPH -> "same paragraph"
+        ProximityScope.PAGE -> "same page"
     }
 }
 
@@ -251,6 +265,7 @@ fun ResearchAxisEntity.toModel(): ResearchAxisDefinition = ResearchAxisDefinitio
     patterns = ResearchCodec.decode(patternsEncoded),
     matchMode = runCatching { LexicalMatchMode.valueOf(matchMode) }.getOrDefault(LexicalMatchMode.PREFIX),
     caseSensitive = caseSensitive,
+    diacriticsSensitive = diacriticsSensitive,
     enabled = enabled,
     colorArgb = colorArgb,
     marker = marker,
@@ -264,6 +279,7 @@ fun ResearchAxisDefinition.toEntity(): ResearchAxisEntity = ResearchAxisEntity(
     patternsEncoded = ResearchCodec.encode(patterns),
     matchMode = matchMode.name,
     caseSensitive = caseSensitive,
+    diacriticsSensitive = diacriticsSensitive,
     enabled = enabled,
     colorArgb = colorArgb,
     marker = marker,
@@ -276,6 +292,8 @@ fun ResearchProfileEntity.toModel(): ResearchProfile = ResearchProfile(
     title = title,
     axisIds = ResearchCodec.decode(axisIdsEncoded),
     proximityChars = proximityChars.coerceAtLeast(0),
+    proximityScope = runCatching { ProximityScope.valueOf(proximityScope) }
+        .getOrDefault(ProximityScope.CHARACTERS),
     createdAtEpochMillis = createdAtEpochMillis,
     updatedAtEpochMillis = updatedAtEpochMillis,
 )
@@ -285,6 +303,7 @@ fun ResearchProfile.toEntity(): ResearchProfileEntity = ResearchProfileEntity(
     title = title,
     axisIdsEncoded = ResearchCodec.encode(axisIds),
     proximityChars = proximityChars.coerceAtLeast(0),
+    proximityScope = proximityScope.name,
     createdAtEpochMillis = createdAtEpochMillis,
     updatedAtEpochMillis = updatedAtEpochMillis,
 )
@@ -302,6 +321,8 @@ fun ResearchHistoryEntity.toModel(): ResearchHistoryEntry = ResearchHistoryEntry
     scope = runCatching { ResearchHistoryScope.valueOf(scope) }.getOrDefault(ResearchHistoryScope.PAGE),
     rangeStartPageIndex = rangeStartPageIndex,
     rangeEndPageIndex = rangeEndPageIndex,
+    proximityScope = runCatching { ProximityScope.valueOf(proximityScope) }
+        .getOrDefault(ProximityScope.CHARACTERS),
 )
 
 fun ResearchHistoryEntry.toEntity(): ResearchHistoryEntity = ResearchHistoryEntity(
@@ -316,5 +337,6 @@ fun ResearchHistoryEntry.toEntity(): ResearchHistoryEntity = ResearchHistoryEnti
     scope = scope.name,
     rangeStartPageIndex = rangeStartPageIndex,
     rangeEndPageIndex = rangeEndPageIndex,
+    proximityScope = proximityScope.name,
     executedAtEpochMillis = executedAtEpochMillis,
 )
