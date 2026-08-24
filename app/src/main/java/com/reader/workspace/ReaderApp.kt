@@ -29,7 +29,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.reader.workspace.core.ModuleCatalog
 import com.reader.workspace.core.ReaderModule
-import com.reader.workspace.pdf.PdfReaderScreen
+import com.reader.workspace.pdf.PdfReaderWorkspaceScreen
 import com.reader.workspace.storage.DocumentsScreen
 import com.reader.workspace.storage.VaultDocument
 
@@ -45,7 +45,7 @@ fun ReaderApp() {
                 .safeDrawingPadding(),
         ) {
             when {
-                selectedDocument != null -> PdfReaderScreen(
+                selectedDocument != null -> PdfReaderWorkspaceScreen(
                     document = selectedDocument!!,
                     onBack = { selectedDocument = null },
                 )
@@ -89,7 +89,7 @@ private fun ReaderHeader() {
             fontWeight = FontWeight.Bold,
         )
         Text(
-            text = "Offline workspace · Reader Tools 0.3",
+            text = "Offline workspace · Visual Research 0.6",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
