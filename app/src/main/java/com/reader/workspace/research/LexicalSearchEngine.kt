@@ -5,7 +5,6 @@ import java.text.Normalizer
 enum class LexicalMatchMode {
     EXACT,
     PREFIX,
-    SUFFIX,
     CONTAINS,
 }
 
@@ -23,6 +22,7 @@ data class LexicalAxis(
     val matchMode: LexicalMatchMode = LexicalMatchMode.PREFIX,
     val caseSensitive: Boolean = false,
     val diacriticsSensitive: Boolean = true,
+    val suffixMatch: Boolean = false,
     val enabled: Boolean = true,
 )
 
@@ -129,7 +129,7 @@ object LexicalSearchEngine {
             }
 
             val end = start + comparisonPattern.length
-            if (!matchesMode(text, pattern, start, end, axis.matchMode)) continue
+            if (!matchesMode(text, pattern, start, end, axis)) continue
 
             result += LexicalHit(
                 axisId = axis.id,
@@ -146,12 +146,8 @@ object LexicalSearchEngine {
     private fun foldForComparison(text: String, axis: LexicalAxis): String = buildString(text.length) {
         text.forEach { source ->
             var folded = source
-            if (!axis.diacriticsSensitive) {
-                folded = stripDiacritic(source)
-            }
-            if (!axis.caseSensitive) {
-                folded = folded.lowercaseChar()
-            }
+            if (!axis.diacriticsSensitive) folded = stripDiacritic(source)
+            if (!axis.caseSensitive) folded = folded.lowercaseChar()
             append(folded)
         }
     }
@@ -162,7 +158,7 @@ object LexicalSearchEngine {
             when (Character.getType(char)) {
                 Character.NON_SPACING_MARK.toInt(),
                 Character.COMBINING_SPACING_MARK.toInt(),
-                Character.ENCLOSING_MARK.toInt(), -> false
+                Character.ENCLOSING_MARK.toInt() -> false
                 else -> true
             }
         } ?: source
@@ -173,22 +169,25 @@ object LexicalSearchEngine {
         pattern: String,
         start: Int,
         end: Int,
-        mode: LexicalMatchMode,
-    ): Boolean = when (mode) {
-        LexicalMatchMode.CONTAINS -> true
-        LexicalMatchMode.PREFIX -> {
-            val needsLeftBoundary = pattern.firstOrNull()?.isLetterOrDigit() == true
-            !needsLeftBoundary || isBoundaryBefore(text, start)
-        }
-        LexicalMatchMode.SUFFIX -> {
+        axis: LexicalAxis,
+    ): Boolean {
+        if (axis.suffixMatch) {
             val needsRightBoundary = pattern.lastOrNull()?.isLetterOrDigit() == true
-            !needsRightBoundary || isBoundaryAfter(text, end)
+            return !needsRightBoundary || isBoundaryAfter(text, end)
         }
-        LexicalMatchMode.EXACT -> {
-            val needsLeftBoundary = pattern.firstOrNull()?.isLetterOrDigit() == true
-            val needsRightBoundary = pattern.lastOrNull()?.isLetterOrDigit() == true
-            (!needsLeftBoundary || isBoundaryBefore(text, start)) &&
-                (!needsRightBoundary || isBoundaryAfter(text, end))
+
+        return when (axis.matchMode) {
+            LexicalMatchMode.CONTAINS -> true
+            LexicalMatchMode.PREFIX -> {
+                val needsLeftBoundary = pattern.firstOrNull()?.isLetterOrDigit() == true
+                !needsLeftBoundary || isBoundaryBefore(text, start)
+            }
+            LexicalMatchMode.EXACT -> {
+                val needsLeftBoundary = pattern.firstOrNull()?.isLetterOrDigit() == true
+                val needsRightBoundary = pattern.lastOrNull()?.isLetterOrDigit() == true
+                (!needsLeftBoundary || isBoundaryBefore(text, start)) &&
+                    (!needsRightBoundary || isBoundaryAfter(text, end))
+            }
         }
     }
 
@@ -242,9 +241,7 @@ object LexicalSearchEngine {
         var start = 0
 
         separators.findAll(text).forEach { match ->
-            if (start < match.range.first) {
-                result += start until match.range.first
-            }
+            if (start < match.range.first) result += start until match.range.first
             start = match.range.last + 1
         }
         if (start < text.length) result += start until text.length
