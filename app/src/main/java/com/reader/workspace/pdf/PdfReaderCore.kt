@@ -1,9 +1,13 @@
 package com.reader.workspace.pdf
 
 import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Matrix
+import android.graphics.Paint
+import android.graphics.RectF
 import android.graphics.pdf.PdfRenderer
+import android.graphics.pdf.models.selection.SelectionBoundary
 import android.os.Build
 import android.os.ParcelFileDescriptor
 import java.io.Closeable
@@ -13,6 +17,26 @@ import kotlin.math.roundToInt
 data class PdfPixelSize(
     val width: Int,
     val height: Int,
+)
+
+data class PdfPointRect(
+    val left: Float,
+    val top: Float,
+    val right: Float,
+    val bottom: Float,
+)
+
+data class PdfTextHighlightRequest(
+    val axisId: String,
+    val startOffset: Int,
+    val endOffsetExclusive: Int,
+    val colorArgb: Long,
+)
+
+data class PdfResolvedHighlight(
+    val axisId: String,
+    val colorArgb: Long,
+    val rects: List<PdfPointRect>,
 )
 
 object PdfPageSizing {
@@ -40,6 +64,35 @@ object PdfTextSupport {
         sdkInt >= MIN_NATIVE_TEXT_API
 }
 
+object PdfResearchOverlay {
+    const val MAX_HIGHLIGHTS_PER_PAGE: Int = 240
+    const val FILL_ALPHA: Int = 78
+    const val UNDERLINE_ALPHA: Int = 210
+
+    fun isAvailable(sdkInt: Int = Build.VERSION.SDK_INT): Boolean =
+        sdkInt >= PdfTextSupport.MIN_NATIVE_TEXT_API
+
+    fun scaleRect(rect: PdfPointRect, scale: Float): PdfPointRect {
+        require(scale > 0f) { "scale must be positive" }
+        return PdfPointRect(
+            left = rect.left * scale,
+            top = rect.top * scale,
+            right = rect.right * scale,
+            bottom = rect.bottom * scale,
+        )
+    }
+
+    fun withAlpha(colorArgb: Long, alpha: Int): Int {
+        val source = colorArgb.toInt()
+        return Color.argb(
+            alpha.coerceIn(0, 255),
+            Color.red(source),
+            Color.green(source),
+            Color.blue(source),
+        )
+    }
+}
+
 class PdfRendererSession(file: File) : Closeable {
     private val descriptor = ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
     private val renderer = PdfRenderer(descriptor)
@@ -51,6 +104,7 @@ class PdfRendererSession(file: File) : Closeable {
     fun renderPage(
         pageIndex: Int,
         targetWidthPx: Int,
+        highlights: List<PdfResolvedHighlight> = emptyList(),
     ): Bitmap = synchronized(lock) {
         require(pageIndex in 0 until renderer.pageCount) { "Page index out of range: $pageIndex" }
         require(targetWidthPx > 0) { "targetWidthPx must be positive" }
@@ -73,6 +127,7 @@ class PdfRendererSession(file: File) : Closeable {
                 matrix,
                 PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY,
             )
+            drawResearchHighlights(bitmap, highlights, scale)
             bitmap
         } finally {
             page.close()
@@ -88,9 +143,51 @@ class PdfRendererSession(file: File) : Closeable {
             page.textContents
                 .asSequence()
                 .map { it.text }
-                .filter { it.isNotBlank() }
-                .joinToString(separator = "\n")
-                .ifBlank { "" }
+                .joinToString(separator = "")
+        } finally {
+            page.close()
+        }
+    }
+
+    fun resolveTextHighlights(
+        pageIndex: Int,
+        requests: List<PdfTextHighlightRequest>,
+    ): List<PdfResolvedHighlight> = synchronized(lock) {
+        require(pageIndex in 0 until renderer.pageCount) { "Page index out of range: $pageIndex" }
+        if (!PdfResearchOverlay.isAvailable() || requests.isEmpty()) return@synchronized emptyList()
+
+        val page = renderer.openPage(pageIndex)
+        try {
+            requests
+                .asSequence()
+                .filter { it.startOffset >= 0 && it.endOffsetExclusive > it.startOffset }
+                .take(PdfResearchOverlay.MAX_HIGHLIGHTS_PER_PAGE)
+                .mapNotNull { request ->
+                    val selection = runCatching {
+                        page.selectContent(
+                            SelectionBoundary(request.startOffset),
+                            SelectionBoundary(request.endOffsetExclusive),
+                        )
+                    }.getOrNull() ?: return@mapNotNull null
+
+                    val rects = selection.selectedTextContents
+                        .asSequence()
+                        .flatMap { content -> content.bounds.asSequence() }
+                        .map(RectF::toPdfPointRect)
+                        .filter { rect -> rect.right > rect.left && rect.bottom > rect.top }
+                        .toList()
+
+                    if (rects.isEmpty()) {
+                        null
+                    } else {
+                        PdfResolvedHighlight(
+                            axisId = request.axisId,
+                            colorArgb = request.colorArgb,
+                            rects = rects,
+                        )
+                    }
+                }
+                .toList()
         } finally {
             page.close()
         }
@@ -99,5 +196,50 @@ class PdfRendererSession(file: File) : Closeable {
     override fun close() = synchronized(lock) {
         renderer.close()
         descriptor.close()
+    }
+}
+
+private fun RectF.toPdfPointRect(): PdfPointRect = PdfPointRect(
+    left = left,
+    top = top,
+    right = right,
+    bottom = bottom,
+)
+
+private fun drawResearchHighlights(
+    bitmap: Bitmap,
+    highlights: List<PdfResolvedHighlight>,
+    scale: Float,
+) {
+    if (highlights.isEmpty()) return
+
+    val canvas = Canvas(bitmap)
+    val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+    val underlinePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.FILL }
+
+    highlights.forEach { highlight ->
+        fillPaint.color = PdfResearchOverlay.withAlpha(
+            highlight.colorArgb,
+            PdfResearchOverlay.FILL_ALPHA,
+        )
+        underlinePaint.color = PdfResearchOverlay.withAlpha(
+            highlight.colorArgb,
+            PdfResearchOverlay.UNDERLINE_ALPHA,
+        )
+
+        highlight.rects.forEach { sourceRect ->
+            val rect = PdfResearchOverlay.scaleRect(sourceRect, scale)
+            val androidRect = RectF(rect.left, rect.top, rect.right, rect.bottom)
+            canvas.drawRoundRect(androidRect, 3f, 3f, fillPaint)
+
+            val underlineHeight = (1.75f * scale).coerceIn(2f, 7f)
+            canvas.drawRect(
+                androidRect.left,
+                (androidRect.bottom - underlineHeight).coerceAtLeast(androidRect.top),
+                androidRect.right,
+                androidRect.bottom,
+                underlinePaint,
+            )
+        }
     }
 }
