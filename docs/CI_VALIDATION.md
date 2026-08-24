@@ -8,3 +8,5 @@ Validation gate:
 - debug APK assembles;
 - APK artifact is uploaded;
 - no critical build errors remain.
+
+A synchronization commit on this branch may be used to retrigger the pull-request CI validation.
