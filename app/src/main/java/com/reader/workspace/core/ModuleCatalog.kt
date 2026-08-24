@@ -28,13 +28,14 @@ object ModuleCatalog {
         ReaderModule(
             id = "research",
             title = "Lexical Research",
-            summary = "Parallel lexical axes, native/OCR overlays, suffix and diacritics controls, structural intersection rules, cartography and persistent profiles/history.",
-            status = "Active · v0.9",
+            summary = "Parallel lexical axes, native/OCR overlays, structural rules, whole-document cartography and persistent Research ↔ Marginalia source anchors.",
+            status = "Active · v0.10",
         ),
         ReaderModule(
             id = "marginalia",
             title = "Marginalia",
-            summary = "A synchronized, resizable canvas attached to source content without altering it.",
+            summary = "A synchronized, resizable canvas attached to source content without altering it; Research anchors now share the same persistent layer.",
+            status = "Integrated · v0.10",
         ),
         ReaderModule(
             id = "converter",

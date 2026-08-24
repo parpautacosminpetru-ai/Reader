@@ -30,7 +30,7 @@ import androidx.compose.ui.unit.dp
 import com.reader.workspace.core.ModuleCatalog
 import com.reader.workspace.core.ReaderModule
 import com.reader.workspace.pdf.PdfReaderWorkspaceScreen
-import com.reader.workspace.research.ResearchRulesWorkspaceScreen
+import com.reader.workspace.research.ResearchHubScreen
 import com.reader.workspace.storage.DocumentsScreen
 import com.reader.workspace.storage.VaultDocument
 
@@ -54,7 +54,7 @@ fun ReaderApp() {
                     onBack = { selectedModule = null },
                     onOpenDocument = { document -> selectedDocument = document },
                 )
-                selectedModule == "research" -> ResearchRulesWorkspaceScreen(
+                selectedModule == "research" -> ResearchHubScreen(
                     onBack = { selectedModule = null },
                 )
                 else -> HomeScreen(onOpenModule = { moduleId ->
@@ -95,7 +95,7 @@ private fun ReaderHeader() {
             fontWeight = FontWeight.Bold,
         )
         Text(
-            text = "Offline workspace · Structural Research 0.9",
+            text = "Offline workspace · Research ↔ Marginalia 0.10",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
