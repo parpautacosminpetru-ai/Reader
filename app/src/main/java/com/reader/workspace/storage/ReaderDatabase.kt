@@ -146,6 +146,9 @@ abstract class ReaderDatabase : RoomDatabase() {
                     "ALTER TABLE research_axes ADD COLUMN diacriticsSensitive INTEGER NOT NULL DEFAULT 1",
                 )
                 db.execSQL(
+                    "ALTER TABLE research_axes ADD COLUMN suffixMatch INTEGER NOT NULL DEFAULT 0",
+                )
+                db.execSQL(
                     "ALTER TABLE research_profiles ADD COLUMN proximityScope TEXT NOT NULL DEFAULT 'CHARACTERS'",
                 )
                 db.execSQL(
