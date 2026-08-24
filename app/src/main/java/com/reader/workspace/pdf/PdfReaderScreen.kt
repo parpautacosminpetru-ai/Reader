@@ -49,12 +49,16 @@ import com.reader.workspace.marginalia.MarginaliaGeometry
 import com.reader.workspace.marginalia.MarginaliaItem
 import com.reader.workspace.marginalia.MarginaliaItemKind
 import com.reader.workspace.marginalia.MarginaliaRepository
-import com.reader.workspace.research.LexicalAxis
 import com.reader.workspace.research.LexicalHit
 import com.reader.workspace.research.LexicalMatchMode
 import com.reader.workspace.research.LexicalSearchEngine
 import com.reader.workspace.research.ProximityMatch
 import com.reader.workspace.research.ProximityRule
+import com.reader.workspace.research.ResearchAxisDefinition
+import com.reader.workspace.research.ResearchHistoryEntry
+import com.reader.workspace.research.ResearchPalette
+import com.reader.workspace.research.ResearchProfile
+import com.reader.workspace.research.ResearchRepository
 import com.reader.workspace.storage.DocumentVaultRepository
 import com.reader.workspace.storage.VaultDocument
 import java.util.UUID
@@ -130,6 +134,8 @@ fun PdfReaderScreen(
         ) {
             if (showResearch) {
                 ResearchPanel(
+                    documentId = document.id,
+                    pageIndex = pageIndex,
                     pageNumber = pageIndex + 1,
                     pageText = pageText,
                     pageTextReady = pageTextReady,
@@ -459,35 +465,53 @@ private fun MarginaliaPanel(
 
 @Composable
 private fun ResearchPanel(
+    documentId: String,
+    pageIndex: Int,
     pageNumber: Int,
     pageText: String?,
     pageTextReady: Boolean,
 ) {
-    var axisA by remember { mutableStateOf("") }
-    var axisB by remember { mutableStateOf("") }
-    var matchMode by remember { mutableStateOf(LexicalMatchMode.PREFIX) }
-    var proximityChars by remember { mutableStateOf("300") }
-
-    val sourceText = pageText.orEmpty()
-    val axes = remember(axisA, axisB, matchMode) {
-        buildList {
-            val first = splitPatterns(axisA)
-            if (first.isNotEmpty()) add(LexicalAxis("axis-a", "Axis A", first, matchMode))
-            val second = splitPatterns(axisB)
-            if (second.isNotEmpty()) add(LexicalAxis("axis-b", "Axis B", second, matchMode))
-        }
+    val context = LocalContext.current
+    val repository = remember(context.applicationContext) {
+        ResearchRepository.get(context.applicationContext)
     }
-    val hits = remember(sourceText, axes) { LexicalSearchEngine.search(sourceText, axes) }
-    val proximity = remember(hits, axes, proximityChars) {
-        if (axes.size < 2) {
+    val scope = rememberCoroutineScope()
+    val savedAxes by repository.axes.collectAsState(initial = emptyList())
+    val savedProfiles by repository.profiles.collectAsState(initial = emptyList())
+    val history by remember(documentId) {
+        repository.history(documentId)
+    }.collectAsState(initial = emptyList())
+
+    var selectedAxisIds by remember(documentId) { mutableStateOf<Set<String>>(emptySet()) }
+    var selectedProfileId by remember(documentId) { mutableStateOf<String?>(null) }
+    var proximityChars by remember(documentId) { mutableStateOf("300") }
+    var newAxisTitle by remember { mutableStateOf("") }
+    var newAxisForms by remember { mutableStateOf("") }
+    var newAxisMode by remember { mutableStateOf(LexicalMatchMode.PREFIX) }
+    var profileTitle by remember { mutableStateOf("") }
+    var status by remember(documentId) { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(savedAxes.map { it.id }) {
+        val validIds = savedAxes.map { it.id }.toSet()
+        selectedAxisIds = selectedAxisIds.intersect(validIds)
+    }
+
+    val activeAxes = remember(savedAxes, selectedAxisIds) {
+        savedAxes.filter { it.id in selectedAxisIds && it.enabled }
+    }
+    val sourceText = pageText.orEmpty()
+    val lexicalAxes = remember(activeAxes) { activeAxes.map(ResearchAxisDefinition::toLexicalAxis) }
+    val hits = remember(sourceText, lexicalAxes) { LexicalSearchEngine.search(sourceText, lexicalAxes) }
+    val proximity = remember(hits, activeAxes, proximityChars) {
+        if (activeAxes.size < 2) {
             emptyList()
         } else {
             LexicalSearchEngine.findProximityMatches(
                 hits = hits,
                 rules = listOf(
                     ProximityRule(
-                        id = "ui-intersection",
-                        requiredAxisIds = axes.map { it.id }.toSet(),
+                        id = "saved-axis-intersection",
+                        requiredAxisIds = activeAxes.map { it.id }.toSet(),
                         maxSpanChars = proximityChars.toIntOrNull()?.coerceAtLeast(0) ?: 300,
                     ),
                 ),
@@ -503,12 +527,17 @@ private fun ResearchPanel(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(max = 300.dp)
+                .heightIn(max = 440.dp)
                 .verticalScroll(rememberScrollState())
                 .padding(12.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text("Lexical Research · page $pageNumber", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "${savedAxes.size} saved axis/axes · ${savedProfiles.size} profile(s) · local only",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
 
             when {
                 !pageTextReady -> {
@@ -527,26 +556,107 @@ private fun ResearchPanel(
                 )
             }
 
+            Text("Create reusable axis", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+            OutlinedTextField(
+                value = newAxisTitle,
+                onValueChange = { newAxisTitle = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Axis title") },
+                singleLine = true,
+            )
+            OutlinedTextField(
+                value = newAxisForms,
+                onValueChange = { newAxisForms = it },
+                modifier = Modifier.fillMaxWidth(),
+                label = { Text("Lexical forms · comma/newline separated") },
+            )
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 LexicalMatchMode.entries.forEach { mode ->
-                    TextButton(onClick = { matchMode = mode }) {
-                        Text(if (matchMode == mode) "[${modeLabel(mode)}]" else modeLabel(mode))
+                    TextButton(onClick = { newAxisMode = mode }) {
+                        Text(if (newAxisMode == mode) "[${modeLabel(mode)}]" else modeLabel(mode))
+                    }
+                }
+            }
+            Button(
+                onClick = {
+                    val title = newAxisTitle.trim()
+                    val patterns = splitPatterns(newAxisForms)
+                    if (title.isNotEmpty() && patterns.isNotEmpty()) {
+                        val now = System.currentTimeMillis()
+                        val id = UUID.randomUUID().toString()
+                        scope.launch {
+                            repository.saveAxis(
+                                ResearchAxisDefinition(
+                                    id = id,
+                                    title = title,
+                                    patterns = patterns,
+                                    matchMode = newAxisMode,
+                                    colorArgb = ResearchPalette.colorFor(savedAxes.size),
+                                    createdAtEpochMillis = now,
+                                    updatedAtEpochMillis = now,
+                                ),
+                            )
+                            selectedAxisIds = selectedAxisIds + id
+                            newAxisTitle = ""
+                            newAxisForms = ""
+                            status = "Axis saved and activated."
+                        }
+                    }
+                },
+                enabled = newAxisTitle.isNotBlank() && splitPatterns(newAxisForms).isNotEmpty(),
+            ) {
+                Text("Save axis")
+            }
+
+            if (savedAxes.isNotEmpty()) {
+                Text("Saved axes", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                savedAxes.forEach { axis ->
+                    val active = axis.id in selectedAxisIds
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(
+                            modifier = Modifier.padding(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(2.dp),
+                        ) {
+                            Text(
+                                "${if (active) "✓ " else ""}${axis.title}",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = if (active) FontWeight.Bold else FontWeight.Normal,
+                            )
+                            Text(
+                                "${modeLabel(axis.matchMode)} · ${axis.patterns.size} form(s) · #${axis.colorArgb.toString(16).uppercase().padStart(8, '0')}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                TextButton(
+                                    onClick = {
+                                        selectedAxisIds = if (active) {
+                                            selectedAxisIds - axis.id
+                                        } else {
+                                            selectedAxisIds + axis.id
+                                        }
+                                        selectedProfileId = null
+                                    },
+                                ) {
+                                    Text(if (active) "Disable" else "Activate")
+                                }
+                                TextButton(
+                                    onClick = {
+                                        scope.launch {
+                                            repository.deleteAxis(axis.id)
+                                            selectedAxisIds = selectedAxisIds - axis.id
+                                            status = "Axis deleted."
+                                        }
+                                    },
+                                ) {
+                                    Text("Delete")
+                                }
+                            }
+                        }
                     }
                 }
             }
 
-            OutlinedTextField(
-                value = axisA,
-                onValueChange = { axisA = it },
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("Axis A forms") },
-            )
-            OutlinedTextField(
-                value = axisB,
-                onValueChange = { axisB = it },
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("Axis B forms (optional)") },
-            )
             OutlinedTextField(
                 value = proximityChars,
                 onValueChange = { proximityChars = it.filter(Char::isDigit).take(6) },
@@ -561,6 +671,129 @@ private fun ResearchPanel(
                 color = MaterialTheme.colorScheme.primary,
             )
             ResearchResults(hits = hits, proximity = proximity)
+
+            if (activeAxes.isNotEmpty()) {
+                OutlinedTextField(
+                    value = profileTitle,
+                    onValueChange = { profileTitle = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Profile title") },
+                    singleLine = true,
+                )
+                Button(
+                    onClick = {
+                        val title = profileTitle.trim()
+                        if (title.isNotEmpty()) {
+                            val now = System.currentTimeMillis()
+                            val orderedIds = savedAxes.filter { it.id in selectedAxisIds }.map { it.id }
+                            val id = UUID.randomUUID().toString()
+                            scope.launch {
+                                repository.saveProfile(
+                                    ResearchProfile(
+                                        id = id,
+                                        title = title,
+                                        axisIds = orderedIds,
+                                        proximityChars = proximityChars.toIntOrNull()?.coerceAtLeast(0) ?: 300,
+                                        createdAtEpochMillis = now,
+                                        updatedAtEpochMillis = now,
+                                    ),
+                                )
+                                selectedProfileId = id
+                                profileTitle = ""
+                                status = "Research profile saved."
+                            }
+                        }
+                    },
+                    enabled = profileTitle.isNotBlank(),
+                ) {
+                    Text("Save active axes as profile")
+                }
+            }
+
+            if (savedProfiles.isNotEmpty()) {
+                Text("Saved profiles", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                savedProfiles.forEach { profile ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                if (selectedProfileId == profile.id) "✓ ${profile.title}" else profile.title,
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                            Text(
+                                "${profile.axisIds.size} axis/axes · span ${profile.proximityChars}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        TextButton(
+                            onClick = {
+                                val validIds = savedAxes.map { it.id }.toSet()
+                                selectedAxisIds = profile.axisIds.filter { it in validIds }.toSet()
+                                proximityChars = profile.proximityChars.toString()
+                                selectedProfileId = profile.id
+                                status = "Profile loaded."
+                            },
+                        ) { Text("Use") }
+                        TextButton(
+                            onClick = {
+                                scope.launch {
+                                    repository.deleteProfile(profile.id)
+                                    if (selectedProfileId == profile.id) selectedProfileId = null
+                                    status = "Profile deleted."
+                                }
+                            },
+                        ) { Text("Delete") }
+                    }
+                }
+            }
+
+            Button(
+                onClick = {
+                    val activeIds = activeAxes.map { it.id }
+                    val now = System.currentTimeMillis()
+                    scope.launch {
+                        repository.recordHistory(
+                            ResearchHistoryEntry(
+                                id = UUID.randomUUID().toString(),
+                                documentId = documentId,
+                                pageIndex = pageIndex,
+                                profileId = selectedProfileId,
+                                axisIds = activeIds,
+                                proximityChars = proximityChars.toIntOrNull()?.coerceAtLeast(0) ?: 300,
+                                hitCount = hits.size,
+                                intersectionCount = proximity.size,
+                                executedAtEpochMillis = now,
+                            ),
+                        )
+                        status = "Search saved to local history."
+                    }
+                },
+                enabled = activeAxes.isNotEmpty() && pageTextReady && pageText != null,
+            ) {
+                Text("Run & save history")
+            }
+
+            status?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
+
+            if (history.isNotEmpty()) {
+                Text("Recent searches in this document", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+                history.take(5).forEach { entry ->
+                    Text(
+                        "page ${entry.pageIndex + 1} · ${entry.axisIds.size} axis/axes · ${entry.hitCount} hits · ${entry.intersectionCount} intersections",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+            }
         }
     }
 }
