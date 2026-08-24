@@ -9,19 +9,27 @@ import androidx.sqlite.db.SupportSQLiteDatabase
 import com.reader.workspace.marginalia.MarginaliaDao
 import com.reader.workspace.marginalia.MarginaliaItemEntity
 import com.reader.workspace.marginalia.MarginaliaSettingsEntity
+import com.reader.workspace.research.ResearchAxisEntity
+import com.reader.workspace.research.ResearchDao
+import com.reader.workspace.research.ResearchHistoryEntity
+import com.reader.workspace.research.ResearchProfileEntity
 
 @Database(
     entities = [
         VaultDocumentEntity::class,
         MarginaliaItemEntity::class,
         MarginaliaSettingsEntity::class,
+        ResearchAxisEntity::class,
+        ResearchProfileEntity::class,
+        ResearchHistoryEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 abstract class ReaderDatabase : RoomDatabase() {
     abstract fun vaultDocumentDao(): VaultDocumentDao
     abstract fun marginaliaDao(): MarginaliaDao
+    abstract fun researchDao(): ResearchDao
 
     companion object {
         @Volatile
@@ -66,13 +74,65 @@ abstract class ReaderDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS research_axes (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        title TEXT NOT NULL,
+                        patternsEncoded TEXT NOT NULL,
+                        matchMode TEXT NOT NULL,
+                        caseSensitive INTEGER NOT NULL,
+                        enabled INTEGER NOT NULL,
+                        colorArgb INTEGER NOT NULL,
+                        marker TEXT,
+                        createdAtEpochMillis INTEGER NOT NULL,
+                        updatedAtEpochMillis INTEGER NOT NULL
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS research_profiles (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        title TEXT NOT NULL,
+                        axisIdsEncoded TEXT NOT NULL,
+                        proximityChars INTEGER NOT NULL,
+                        createdAtEpochMillis INTEGER NOT NULL,
+                        updatedAtEpochMillis INTEGER NOT NULL
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS research_history (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        documentId TEXT NOT NULL,
+                        pageIndex INTEGER NOT NULL,
+                        profileId TEXT,
+                        axisIdsEncoded TEXT NOT NULL,
+                        proximityChars INTEGER NOT NULL,
+                        hitCount INTEGER NOT NULL,
+                        intersectionCount INTEGER NOT NULL,
+                        executedAtEpochMillis INTEGER NOT NULL
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_research_history_documentId_executedAtEpochMillis " +
+                        "ON research_history(documentId, executedAtEpochMillis)",
+                )
+            }
+        }
+
         fun get(context: Context): ReaderDatabase = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(
                 context.applicationContext,
                 ReaderDatabase::class.java,
                 "reader.db",
             )
-                .addMigrations(MIGRATION_1_2)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .build()
                 .also { instance = it }
         }
