@@ -29,6 +29,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.reader.workspace.core.ModuleCatalog
 import com.reader.workspace.core.ReaderModule
+import com.reader.workspace.index.IndexWorkspaceScreen
 import com.reader.workspace.pdf.PdfReaderWorkspaceScreen
 import com.reader.workspace.research.ResearchHubScreen
 import com.reader.workspace.storage.DocumentsScreen
@@ -57,8 +58,11 @@ fun ReaderApp() {
                 selectedModule == "research" -> ResearchHubScreen(
                     onBack = { selectedModule = null },
                 )
+                selectedModule == "index" -> IndexWorkspaceScreen(
+                    onBack = { selectedModule = null },
+                )
                 else -> HomeScreen(onOpenModule = { moduleId ->
-                    if (moduleId == "documents" || moduleId == "research") {
+                    if (moduleId in setOf("documents", "research", "index")) {
                         selectedModule = moduleId
                     }
                 })
@@ -95,7 +99,7 @@ private fun ReaderHeader() {
             fontWeight = FontWeight.Bold,
         )
         Text(
-            text = "Offline workspace · Research ↔ Marginalia 0.10",
+            text = "Offline workspace · Universal Index 0.11",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -128,7 +132,7 @@ private fun ModuleCard(
     module: ReaderModule,
     onClick: () -> Unit,
 ) {
-    val enabled = module.id == "documents" || module.id == "research"
+    val enabled = module.id in setOf("documents", "research", "index")
     Card(
         modifier = Modifier
             .fillMaxWidth()
