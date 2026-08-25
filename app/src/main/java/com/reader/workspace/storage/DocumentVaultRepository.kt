@@ -67,6 +67,7 @@ class DocumentVaultRepository private constructor(
         database.marginaliaDao().deleteItemsForDocument(id)
         database.marginaliaDao().deleteSettingsForDocument(id)
         database.researchDao().deleteHistoryForDocument(id)
+        database.indexDao().deleteForDocument(id)
         dao.deleteById(id)
     }
 
