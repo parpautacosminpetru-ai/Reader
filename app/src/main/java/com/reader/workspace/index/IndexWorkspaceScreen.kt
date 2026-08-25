@@ -33,15 +33,14 @@ import com.reader.workspace.marginalia.MarginaliaRepository
 import com.reader.workspace.storage.DocumentVaultRepository
 import com.reader.workspace.storage.VaultDisplay
 import com.reader.workspace.storage.VaultDocument
+import java.util.Locale
 import java.util.UUID
 import kotlinx.coroutines.launch
 
 @Composable
-fun IndexWorkspaceScreen(
-    onBack: () -> Unit,
-    onOpenPdf: (VaultDocument, Int) -> Unit,
-) {
+fun IndexWorkspaceScreen(onBack: () -> Unit) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val vaultRepository = remember(context.applicationContext) {
         DocumentVaultRepository.get(context.applicationContext)
     }
@@ -65,11 +64,22 @@ fun IndexWorkspaceScreen(
     var selectedCategory by remember { mutableStateOf<String?>(null) }
     var showCreate by remember { mutableStateOf(false) }
     var status by remember { mutableStateOf<String?>(null) }
+    var previewItem by remember { mutableStateOf<UniversalIndexItem?>(null) }
+
+    val previewDocument = previewItem?.let { documentById[it.documentId] }
+    if (previewItem != null && previewDocument != null && VaultDisplay.isPdf(previewDocument)) {
+        IndexSourcePreviewScreen(
+            document = previewDocument,
+            item = previewItem!!,
+            onBack = { previewItem = null },
+        )
+        return
+    }
 
     val categories = remember(allItems) {
         allItems.map(UniversalIndexItem::category)
-            .distinctBy(String::lowercase)
-            .sortedBy(String::lowercase)
+            .distinctBy { it.lowercase(Locale.ROOT) }
+            .sortedBy { it.lowercase(Locale.ROOT) }
     }
     LaunchedEffect(categories) {
         if (selectedCategory != null && categories.none { it.equals(selectedCategory, ignoreCase = true) }) {
@@ -118,7 +128,7 @@ fun IndexWorkspaceScreen(
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Text(
-                "The index merges manual entries with text-bearing Marginalia and Research anchors without duplicating their data.",
+                "Manual entries, Marginalia notes and Research anchors appear in one alphabetic index without copying the annotation layer.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -192,27 +202,21 @@ fun IndexWorkspaceScreen(
                             item = item,
                             document = document,
                             onGo = {
-                                if (document != null && VaultDisplay.isPdf(document)) {
-                                    onOpenPdf(document, item.pageIndex)
-                                } else {
-                                    status = "The source is indexed, but direct navigation is currently available for PDFs."
+                                when {
+                                    document == null -> status = "The source document is no longer in the Vault."
+                                    VaultDisplay.isPdf(document) -> previewItem = item
+                                    else -> status = "This source is indexed; direct preview is currently enabled for PDFs."
                                 }
                             },
                             onDelete = if (item.source == UniversalIndexSource.MANUAL) {
                                 {
-                                    val rawId = item.id.removePrefix("manual:")
-                                    status = "Removing manual index entry…"
-                                    // The coroutine scope is owned by the helper card through this callback's caller.
-                                    rawId
+                                    scope.launch {
+                                        indexRepository.delete(item.id.removePrefix("manual:"))
+                                        status = "Manual index entry removed."
+                                    }
                                 }
                             } else {
                                 null
-                            },
-                            deleteManual = { id ->
-                                kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
-                                    indexRepository.delete(id)
-                                    status = "Manual index entry removed."
-                                }
                             },
                         )
                     }
@@ -265,7 +269,7 @@ private fun ManualIndexEntryForm(
                 value = category,
                 onValueChange = { category = it },
                 modifier = Modifier.fillMaxWidth(),
-                label = { Text("Category · e.g. Person, Place, Topic") },
+                label = { Text("Category · Person, Place, Topic, etc.") },
                 singleLine = true,
             )
 
@@ -281,7 +285,7 @@ private fun ManualIndexEntryForm(
             }
             if (documents.size > MAX_DOCUMENT_PICKER_ROWS) {
                 Text(
-                    "Showing the first $MAX_DOCUMENT_PICKER_ROWS documents. Narrowing large vaults is planned for the next index iteration.",
+                    "Showing the first $MAX_DOCUMENT_PICKER_ROWS documents.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -299,14 +303,14 @@ private fun ManualIndexEntryForm(
                     value = startText,
                     onValueChange = { startText = it.filter(Char::isDigit).take(9) },
                     modifier = Modifier.weight(1f),
-                    label = { Text("Start offset · optional") },
+                    label = { Text("Start · optional") },
                     singleLine = true,
                 )
                 OutlinedTextField(
                     value = endText,
                     onValueChange = { endText = it.filter(Char::isDigit).take(9) },
                     modifier = Modifier.weight(1f),
-                    label = { Text("End offset · optional") },
+                    label = { Text("End · optional") },
                     singleLine = true,
                 )
             }
@@ -352,8 +356,7 @@ private fun IndexItemCard(
     item: UniversalIndexItem,
     document: VaultDocument?,
     onGo: () -> Unit,
-    onDelete: (() -> String)?,
-    deleteManual: (String) -> Unit,
+    onDelete: (() -> Unit)?,
 ) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
@@ -367,7 +370,7 @@ private fun IndexItemCard(
                 color = MaterialTheme.colorScheme.primary,
             )
             Text(
-                document?.displayName ?: "Source document is no longer in the Vault",
+                document?.displayName ?: "Source document missing",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -383,8 +386,8 @@ private fun IndexItemCard(
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 TextButton(onClick = onGo, enabled = document != null) { Text("Go") }
-                if (onDelete != null) {
-                    TextButton(onClick = { deleteManual(onDelete()) }) { Text("Delete") }
+                onDelete?.let { delete ->
+                    TextButton(onClick = delete) { Text("Delete") }
                 }
             }
         }
