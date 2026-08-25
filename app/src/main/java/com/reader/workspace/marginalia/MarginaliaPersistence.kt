@@ -49,6 +49,12 @@ interface MarginaliaDao {
     )
     fun observeItems(documentId: String): Flow<List<MarginaliaItemEntity>>
 
+    @Query(
+        "SELECT * FROM marginalia_items WHERE text IS NOT NULL AND TRIM(text) != '' " +
+            "ORDER BY documentId ASC, pageIndex ASC, createdAtEpochMillis ASC",
+    )
+    fun observeIndexableItems(): Flow<List<MarginaliaItemEntity>>
+
     @Query("SELECT * FROM marginalia_settings WHERE documentId = :documentId LIMIT 1")
     fun observeSettings(documentId: String): Flow<MarginaliaSettingsEntity?>
 
@@ -73,6 +79,9 @@ class MarginaliaRepository private constructor(
 ) {
     fun observeItems(documentId: String): Flow<List<MarginaliaItem>> =
         dao.observeItems(documentId).map { entities -> entities.map(MarginaliaItemEntity::toModel) }
+
+    val indexableItems: Flow<List<MarginaliaItem>> =
+        dao.observeIndexableItems().map { entities -> entities.map(MarginaliaItemEntity::toModel) }
 
     fun observeWidth(documentId: String): Flow<Float> =
         dao.observeSettings(documentId).map { entity ->
