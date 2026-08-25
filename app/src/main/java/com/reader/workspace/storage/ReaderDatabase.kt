@@ -6,6 +6,8 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import com.reader.workspace.index.IndexDao
+import com.reader.workspace.index.IndexEntryEntity
 import com.reader.workspace.marginalia.MarginaliaDao
 import com.reader.workspace.marginalia.MarginaliaItemEntity
 import com.reader.workspace.marginalia.MarginaliaSettingsEntity
@@ -22,14 +24,16 @@ import com.reader.workspace.research.ResearchProfileEntity
         ResearchAxisEntity::class,
         ResearchProfileEntity::class,
         ResearchHistoryEntity::class,
+        IndexEntryEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = false,
 )
 abstract class ReaderDatabase : RoomDatabase() {
     abstract fun vaultDocumentDao(): VaultDocumentDao
     abstract fun marginaliaDao(): MarginaliaDao
     abstract fun researchDao(): ResearchDao
+    abstract fun indexDao(): IndexDao
 
     companion object {
         @Volatile
@@ -157,13 +161,48 @@ abstract class ReaderDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    """
+                    CREATE TABLE IF NOT EXISTS index_entries (
+                        id TEXT NOT NULL PRIMARY KEY,
+                        title TEXT NOT NULL,
+                        category TEXT NOT NULL,
+                        documentId TEXT NOT NULL,
+                        pageIndex INTEGER NOT NULL,
+                        startOffset INTEGER,
+                        endOffsetExclusive INTEGER,
+                        note TEXT,
+                        createdAtEpochMillis INTEGER NOT NULL,
+                        updatedAtEpochMillis INTEGER NOT NULL
+                    )
+                    """.trimIndent(),
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_index_entries_documentId_pageIndex " +
+                        "ON index_entries(documentId, pageIndex)",
+                )
+                db.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_index_entries_category " +
+                        "ON index_entries(category)",
+                )
+            }
+        }
+
         fun get(context: Context): ReaderDatabase = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(
                 context.applicationContext,
                 ReaderDatabase::class.java,
                 "reader.db",
             )
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                .addMigrations(
+                    MIGRATION_1_2,
+                    MIGRATION_2_3,
+                    MIGRATION_3_4,
+                    MIGRATION_4_5,
+                    MIGRATION_5_6,
+                )
                 .build()
                 .also { instance = it }
         }
