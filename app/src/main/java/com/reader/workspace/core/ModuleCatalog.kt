@@ -50,7 +50,8 @@ object ModuleCatalog {
         ReaderModule(
             id = "index",
             title = "Index",
-            summary = "Practical indexes for documents, collections and memory palaces.",
+            summary = "Alphabetic/category index combining manual entries, Marginalia notes and Research anchors with direct PDF source preview.",
+            status = "Active · v0.11",
         ),
         ReaderModule(
             id = "memory-palace",
